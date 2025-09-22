@@ -1,0 +1,12 @@
+# Continue Python Core Requirements
+# 원본 TypeScript Continue 프로젝트의 Python 포팅을 위한 의존성
+
+# Tree-sitter (원본과 동일한 C++ 기반, WebAssembly 파서 사용)
+tree-sitter==0.20.4
+
+# LSP 서버 (언어 서버 프로토콜 지원)
+python-lsp-server[all]>=1.7.0
+
+# 추가 유틸리티 (선택사항)
+aiofiles>=23.0.0
+aiohttp>=3.8.0

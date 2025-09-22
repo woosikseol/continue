@@ -1,0 +1,145 @@
+{
+  "filepath": "test_example.py",
+  "language": "python",
+  "ast_root": {
+    "type": "module",
+    "text": "#!/usr/bin/env python3\n\"\"\"\nContinue Python 포팅 테스트 예시\n원본 analyze-file.js와 동일한 기능을 테스트\n\"\"\"\n\nimport asy...",
+    "start_position": [
+      0,
+      0
+    ],
+    "end_position": [
+      149,
+      0
+    ],
+    "children_count": 20
+  },
+  "symbols": [
+    {
+      "filepath": "test_example.py",
+      "type": "function_definition",
+      "name": "test_tree_sitter_analysis",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 23
+        },
+        "end": {
+          "character": 47,
+          "line": 53
+        }
+      },
+      "content": "async def test_tree_sitter_analysis():\n    \"\"\"Tree-sitter 분석 테스트\"\"\"\n    print(\"=== Tree-sitter 분석 테스트 ===\")\n    \n    try:\n        # Tree-sitter 서비스 초기화\n        tree_sitter_service = TreeSitterService()\n        await tree_sitter_service.initialize()\n        \n        # 테스트 파일 경로\n        test_file = __file__  # 현재 파일을 테스트\n        \n        # AST 분석\n        ast = await tree_sitter_service.get_ast(test_file)\n        if ast:\n            print(f\"AST 루트 타입: {ast.type}\")\n            print(f\"AST 노드 수: {tree_sitter_service.count_nodes(ast)}\")\n            print(f\"AST 최대 깊이: {tree_sitter_service.get_max_depth(ast)}\")\n            print(f\"AST 노드 타입들: {list(tree_sitter_service.get_node_types(ast).keys())[:10]}\")\n        \n        # 심볼 추출\n        symbols = await tree_sitter_service.get_symbols_for_file(test_file)\n        print(f\"추출된 심볼 수: {len(symbols)}\")\n        for symbol in symbols[:5]:  # 처음 5개만 출력\n            print(f\"  - {symbol.name} ({symbol.type})\")\n        \n        print(\"Tree-sitter 분석 테스트 완료\\n\")\n        \n    except Exception as e:\n        print(f\"Tree-sitter 분석 테스트 실패: {e}\\n\")"
+    },
+    {
+      "filepath": "test_example.py",
+      "type": "function_definition",
+      "name": "test_core_analysis",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 54
+        },
+        "end": {
+          "character": 40,
+          "line": 95
+        }
+      },
+      "content": "async def test_core_analysis():\n    \"\"\"Core 분석 테스트\"\"\"\n    print(\"=== Core 분석 테스트 ===\")\n    \n    try:\n        # Core 초기화\n        config = CoreConfig(\n            workspace_paths=[str(Path(__file__).parent)],\n            enable_tree_sitter=True,\n            enable_lsp=False,  # LSP는 환경 설정이 필요하므로 비활성화\n            enable_autocomplete=True,\n            enable_indexing=True\n        )\n        core = Core(config)\n        await core.initialize()\n        \n        # 테스트 파일 분석\n        test_file = __file__\n        result = await core.analyze_file(test_file)\n        \n        print(f\"분석 결과:\")\n        print(f\"  - Tree-sitter 노드 수: {result['tree_sitter']['node_count']}\")\n        print(f\"  - Tree-sitter 최대 깊이: {result['tree_sitter']['max_depth']}\")\n        print(f\"  - Tree-sitter 노드 타입 수: {len(result['tree_sitter']['node_types'])}\")\n        \n        # 자동완성 테스트\n        position = Position(line=10, character=5)\n        completions = await core.get_completions(test_file, position)\n        print(f\"  - 자동완성 항목 수: {len(completions)}\")\n        \n        # 컨텍스트 테스트\n        context_items = await core.get_context(\"function\", test_file)\n        print(f\"  - 컨텍스트 항목 수: {len(context_items)}\")\n        \n        # 종료\n        await core.shutdown()\n        \n        print(\"Core 분석 테스트 완료\\n\")\n        \n    except Exception as e:\n        print(f\"Core 분석 테스트 실패: {e}\\n\")"
+    },
+    {
+      "filepath": "test_example.py",
+      "type": "function_definition",
+      "name": "test_file_analysis",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 96
+        },
+        "end": {
+          "character": 38,
+          "line": 131
+        }
+      },
+      "content": "async def test_file_analysis():\n    \"\"\"파일 분석 테스트\"\"\"\n    print(\"=== 파일 분석 테스트 ===\")\n    \n    try:\n        from analyze_file import FileAnalyzer\n        \n        # 파일 분석기 초기화\n        analyzer = FileAnalyzer()\n        await analyzer.initialize()\n        \n        # 현재 파일 분석\n        test_file = __file__\n        result = await analyzer.analyze_file(test_file)\n        \n        print(f\"파일 분석 결과:\")\n        print(f\"  - 파일: {result.filepath}\")\n        print(f\"  - 언어: {result.language}\")\n        print(f\"  - AST 루트 타입: {result.ast_root.type}\")\n        print(f\"  - AST 자식 수: {result.ast_root.children_count}\")\n        print(f\"  - 총 노드 수: {result.analysis['total_nodes']}\")\n        print(f\"  - 최대 깊이: {result.analysis['max_depth']}\")\n        print(f\"  - 심볼 수: {len(result.symbols)}\")\n        \n        # 심볼 정보 출력\n        for symbol in result.symbols[:3]:  # 처음 3개만\n            print(f\"    - {symbol.name} ({symbol.type}) at line {symbol.range.start.line}\")\n        \n        # 종료\n        await analyzer.shutdown()\n        \n        print(\"파일 분석 테스트 완료\\n\")\n        \n    except Exception as e:\n        print(f\"파일 분석 테스트 실패: {e}\\n\")"
+    },
+    {
+      "filepath": "test_example.py",
+      "type": "function_definition",
+      "name": "main",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 132
+        },
+        "end": {
+          "character": 24,
+          "line": 146
+        }
+      },
+      "content": "async def main():\n    \"\"\"메인 테스트 함수\"\"\"\n    print(\"Continue Python 포팅 테스트 시작\\n\")\n    \n    # Tree-sitter 분석 테스트\n    await test_tree_sitter_analysis()\n    \n    # Core 분석 테스트\n    await test_core_analysis()\n    \n    # 파일 분석 테스트\n    await test_file_analysis()\n    \n    print(\"모든 테스트 완료!\")"
+    }
+  ],
+  "analysis": {
+    "total_nodes": 1178,
+    "max_depth": 19,
+    "node_types": {
+      "module": 1,
+      "comment": 23,
+      "expression_statement": 62,
+      "string": 47,
+      "string_start": 47,
+      "string_content": 54,
+      "string_end": 47,
+      "import_statement": 3,
+      "import": 10,
+      "dotted_name": 18,
+      "identifier": 202,
+      "import_from_statement": 7,
+      "from": 7,
+      "assignment": 15,
+      "=": 22,
+      "attribute": 38,
+      "call": 68,
+      "argument_list": 68,
+      "(": 72,
+      ")": 72,
+      ".": 40,
+      "integer": 6,
+      ",": 9,
+      "function_definition": 4,
+      "async": 4,
+      "def": 4,
+      "parameters": 4,
+      ":": 17,
+      "block": 14,
+      "try_statement": 3,
+      "try": 3,
+      "await": 28,
+      "if_statement": 2,
+      "if": 2,
+      "interpolation": 25,
+      "{": 25,
+      "}": 25,
+      "subscript": 11,
+      "[": 12,
+      "slice": 3,
+      "]": 12,
+      "for_statement": 2,
+      "for": 2,
+      "in": 2,
+      "escape_sequence": 7,
+      "except_clause": 3,
+      "except": 3,
+      "as_pattern": 3,
+      "as": 3,
+      "as_pattern_target": 3,
+      "keyword_argument": 7,
+      "list": 1,
+      "true": 3,
+      "false": 1,
+      "comparison_operator": 1,
+      "==": 1
+    }
+  }
+}
