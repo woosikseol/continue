@@ -8,9 +8,11 @@ import asyncio
 import logging
 import subprocess
 import json
+import os
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from pathlib import Path
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,10 @@ class LSPService:
         self.clients: Dict[str, Any] = {}
         self._initialized = False
         self._request_id = 0
+        # 백그라운드 reader task 관리
+        self._reader_tasks: Dict[str, asyncio.Task] = {}
+        self._response_futures: Dict[str, Dict[int, asyncio.Future]] = defaultdict(dict)
+        self._message_queues: Dict[str, asyncio.Queue] = {}
     
     async def initialize(self):
         """LSP 서비스 초기화"""
@@ -80,17 +86,20 @@ class LSPService:
         # Java LSP 서버 (비활성화)
         # await self._start_java_lsp()
         
-        logger.info("언어 서버들 초기화 완료 (Python LSP 활성화됨)")
+        logger.info("언어 서버들 초기화 완료")
     
     async def _start_python_lsp(self):
-        """Python LSP 서버 시작"""
+        """Python LSP 서버 시작 - 개선된 버전"""
         try:
-            # pylsp (Python Language Server) 시작
+            # pylsp 시작 (올바른 옵션)
+            pylsp_path = '/Users/woosik/repository/continue/python/.venv/bin/pylsp'
+            # pylsp는 기본적으로 stdio를 사용하므로 --stdio 옵션 불필요
             process = await asyncio.create_subprocess_exec(
-                'pylsp',
+                pylsp_path,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                cwd=os.getcwd()  # 작업 디렉토리 설정
             )
             
             self.clients['python'] = {
@@ -99,7 +108,10 @@ class LSPService:
                 'initialized': False
             }
             
-            # LSP 초기화
+            # 1. 백그라운드 reader task 먼저 시작 (무한 대기 방지)
+            await self._start_reader_task('python')
+            
+            # 2. LSP 초기화 (reader task가 준비된 후)
             await self._initialize_lsp_client('python')
             
             logger.info("Python LSP 서버 시작 완료")
@@ -167,7 +179,7 @@ class LSPService:
             logger.warning(f"Java LSP 서버 시작 실패: {e}")
     
     async def _initialize_lsp_client(self, language: str):
-        """LSP 클라이언트 초기화"""
+        """LSP 클라이언트 초기화 - 올바른 LSP 프로토콜"""
         try:
             if language not in self.clients:
                 return
@@ -175,40 +187,233 @@ class LSPService:
             client = self.clients[language]
             process = client['process']
             
-            # LSP 초기화 요청
+            # 1. 올바른 LSP 초기화 요청
             init_request = {
                 'jsonrpc': '2.0',
                 'id': self._get_next_request_id(),
                 'method': 'initialize',
                 'params': {
-                    'processId': None,
-                    'rootUri': None,
+                    'processId': os.getpid(),
+                    'rootUri': f"file://{os.getcwd()}",
                     'capabilities': {
                         'textDocument': {
-                            'definition': {'dynamicRegistration': True},
-                            'references': {'dynamicRegistration': True},
-                            'signatureHelp': {'dynamicRegistration': True},
                             'documentSymbol': {'dynamicRegistration': True}
                         }
+                    },
+                    'clientInfo': {
+                        'name': 'continue-python-analyzer',
+                        'version': '1.0.0'
                     }
                 }
             }
             
-            # 요청 전송
-            request_data = json.dumps(init_request) + '\n'
+            # 2. Content-Length 헤더와 함께 요청 전송 (LSP 프로토콜 필수)
+            content = json.dumps(init_request)
+            content_bytes = content.encode('utf-8')
+            request_data = f"Content-Length: {len(content_bytes)}\r\n\r\n{content}"
+            
             process.stdin.write(request_data.encode())
             await process.stdin.drain()
             
-            # 응답 읽기
-            response_data = await process.stdout.readline()
-            if response_data:
-                response = json.loads(response_data.decode())
-                if 'result' in response:
-                    client['initialized'] = True
-                    logger.info(f"{language} LSP 클라이언트 초기화 완료")
+            # 3. Future 생성 및 대기 (무한 대기 방지)
+            request_id = init_request['id']
+            future = asyncio.Future()
+            self._response_futures[language][request_id] = future
             
+            try:
+                # 응답 대기 (백그라운드 reader가 처리) - 무한 대기 방지
+                result = await asyncio.wait_for(future, timeout=30.0)  # 30초 내에 초기화 완료
+                if result and isinstance(result, dict) and 'capabilities' in result:
+                    client['initialized'] = True
+                    logger.info(f"{language} LSP 클라이언트 초기화 성공")
+                    
+                    # 4. initialized 알림 전송
+                    await self._send_initialized_notification_async(language)
+                else:
+                    logger.warning(f"{language} LSP 초기화 응답 부적절: {result}")
+            except asyncio.TimeoutError:
+                logger.error(f"{language} LSP 초기화 타임아웃 (30초)")
+            except Exception as e:
+                logger.error(f"{language} LSP 초기화 예외: {e}")
+            finally:
+                # Future 정리
+                self._response_futures[language].pop(request_id, None)
+                
         except Exception as e:
             logger.error(f"LSP 클라이언트 초기화 실패 {language}: {e}")
+    
+    # 제거됨: _read_lsp_response - 무한 대기 방지를 위해 삭제
+    # 이제 reader task가 모든 응답을 처리함
+    
+    async def _send_initialized_notification_async(self, language: str):
+        """initialized 알림 전송 - 비동기"""
+        try:
+            if language not in self.clients:
+                return
+                
+            client = self.clients[language]
+            process = client['process']
+            
+            # initialized 알림
+            notification = {
+                'jsonrpc': '2.0',
+                'method': 'initialized',
+                'params': {}
+            }
+            
+            content = json.dumps(notification)
+            content_bytes = content.encode('utf-8')
+            request_data = f"Content-Length: {len(content_bytes)}\r\n\r\n{content}"
+            
+            process.stdin.write(request_data.encode())
+            await process.stdin.drain()
+            
+            logger.info(f"{language} LSP initialized 알림 전송 완료")
+            
+        except Exception as e:
+            logger.warning(f"{language} initialized 알림 전송 실패: {e}")
+    
+    async def _start_reader_task(self, language: str):
+        """백그라운드 reader task 시작"""
+        try:
+            if language not in self.clients:
+                return
+                
+            client = self.clients[language]
+            process = client['process']
+            
+            # 메시지 큐 생성
+            self._message_queues[language] = asyncio.Queue()
+            
+            # reader task 시작
+            self._reader_tasks[language] = asyncio.create_task(
+                self._reader_loop(language, process)
+            )
+            
+            logger.info(f"{language} 백그라운드 reader task 시작")
+            
+        except Exception as e:
+            logger.error(f"{language} reader task 시작 실패: {e}")
+    
+    async def _reader_loop(self, language: str, process):
+        """백그라운드 reader 루프 - 무한 대기 방지"""
+        try:
+            while True:
+                # 프로세스 상태 확인
+                if process.returncode is not None:
+                    logger.warning(f"{language} LSP 프로세스 종료됨: {process.returncode}")
+                    break
+                
+                # 메시지 읽기
+                message = await self._read_lsp_message(process)
+                if message is None:
+                    # 프로세스가 종료되었거나 읽기 실패
+                    break
+                
+                # 메시지 처리
+                await self._handle_lsp_message(language, message)
+                
+        except Exception as e:
+            logger.error(f"{language} reader loop 실패: {e}")
+        finally:
+            # 모든 대기 중인 Future를 에러로 깨우기
+            await self._cleanup_futures(language)
+    
+    async def _read_lsp_message(self, process) -> Optional[Dict[str, Any]]:
+        """LSP 메시지 읽기 - 견고한 헤더 파싱"""
+        try:
+            # Content-Length 헤더 읽기 (견고한 파싱)
+            content_length = 0
+            while True:
+                # 비동기 대기 없이 줄 읽기 (무한 대기 방지)
+                try:
+                    line_bytes = await asyncio.wait_for(process.stdout.readline(), timeout=0.1)
+                except asyncio.TimeoutError:
+                    # 데이터가 준비되지 않았으면 잠시 대기
+                    await asyncio.sleep(0.01)
+                    continue
+                
+                if not line_bytes:
+                    # 프로세스가 정상적으로 종료됨
+                    logger.info("LSP 프로세스 정상 종료")
+                    return None
+                
+                line = line_bytes.decode('utf-8').strip()
+                if line == '':
+                    break  # 빈 줄 (헤더 끝)
+                
+                if line.startswith('Content-Length:'):
+                    content_length = int(line.split(':', 1)[1].strip())
+                # 다른 헤더는 무시 (Content-Type 등)
+            
+            # 메시지 본문 읽기 (비동기 대기 없이)
+            if content_length > 0:
+                try:
+                    # 정확한 길이만큼 읽기 (무한 대기 방지)
+                    message_data = await asyncio.wait_for(
+                        process.stdout.readexactly(content_length), 
+                        timeout=5.0  # 메시지 대기 시간 제한
+                    )
+                    message_json = json.loads(message_data.decode('utf-8'))
+                    logger.debug(f"LSP 메시지 수신: {message_json.get('method', message_json.get('id', 'unknown'))}")
+                    return message_json
+                except asyncio.TimeoutError:
+                    logger.warning(f"LSP 메시지 수신 타임아웃: {content_length} 바이트")
+                    return None
+                except json.JSONDecodeError as e:
+                    logger.error(f"LSP 메시지 JSON 파싱 실패: {e}")
+                    return None
+            else:
+                logger.warning("Content-Length가 0인 LSP 메시지")
+                return None
+                
+        except Exception as e:
+            logger.error(f"LSP 메시지 읽기 예외: {e}")
+            # 예외 발생 시도 None 반환 (프로세스 종료 안함)
+            return None
+    
+    async def _handle_lsp_message(self, language: str, message: Dict[str, Any]):
+        """LSP 메시지 처리 - 요청-응답 매칭"""
+        try:
+            # 응답 메시지인 경우
+            if 'id' in message and 'result' in message:
+                request_id = message['id']
+                if request_id in self._response_futures[language]:
+                    future = self._response_futures[language].pop(request_id)
+                    future.set_result(message['result'])
+                    logger.debug(f"{language} 응답 처리 완료: {request_id}")
+            
+            # 에러 메시지인 경우
+            elif 'id' in message and 'error' in message:
+                request_id = message['id']
+                if request_id in self._response_futures[language]:
+                    future = self._response_futures[language].pop(request_id)
+                    # 에러를 예외로 처리하지 않고 None으로 처리 (프로세스 종료 방지)
+                    future.set_result(None)
+                    logger.warning(f"{language} LSP 에러 응답: {message['error']} (ID: {request_id})")
+            
+            # 알림 메시지인 경우 (처리하지 않음)
+            elif 'method' in message:
+                logger.debug(f"{language} 알림 수신: {message['method']}")
+                
+        except Exception as e:
+            logger.error(f"{language} 메시지 처리 예외: {e}")
+            # 예외가 발생해도 프로세스를 종료하지 않음
+    
+    async def _cleanup_futures(self, language: str):
+        """대기 중인 Future들 정리 - 강제 종료 아닌 정상 완료 처리"""
+        try:
+            completed_futures = 0
+            for request_id, future in list(self._response_futures[language].items()):
+                if not future.done():
+                    # 예외 대신 빈 결과로 완료 처리 (종료 아닌 완료)
+                    future.set_result(None)
+                    completed_futures += 1
+            self._response_futures[language].clear()
+            if completed_futures > 0:
+                logger.info(f"{language} Future {completed_futures}개 정상 완료 처리")
+        except Exception as e:
+            logger.error(f"{language} Future 정리 예외: {e}")
     
     def _get_language_from_file(self, filepath: str) -> str:
         """파일 확장자로부터 언어 결정"""
@@ -228,8 +433,74 @@ class LSPService:
         self._request_id += 1
         return self._request_id
     
+    async def _open_document(self, filepath: str, language: str):
+        """파일을 LSP 서버에 열기 (textDocument/didOpen)"""
+        try:
+            # 파일 내용 읽기
+            with open(filepath, 'r', encoding='utf-8') as f:
+                file_content = f.read()
+            
+            # LSP 언어 ID 매핑
+            language_id_map = {
+                'python': 'python',
+                'typescript': 'typescript',
+                'javascript': 'javascript',
+                'java': 'java'
+            }
+            language_id = language_id_map.get(language, 'python')
+            
+            # textDocument/didOpen 알림 전송
+            did_open_params = {
+                'textDocument': {
+                    'uri': f'file://{filepath}',
+                    'languageId': language_id,
+                    'version': 1,
+                    'text': file_content
+                }
+            }
+            
+            # 알림 전송 (응답 대기 없음)
+            await self._send_lsp_notification(language, 'textDocument/didOpen', did_open_params)
+            
+            # publishDiagnostics 알림을 기다리기 위해 잠시 대기
+            await asyncio.sleep(0.1)
+            
+            logger.debug(f"{language} 파일 열기 완료: {filepath}")
+            
+        except Exception as e:
+            logger.error(f"{language} 파일 열기 실패 {filepath}: {e}")
+    
+    async def _send_lsp_notification(self, language: str, method: str, params: Dict[str, Any]):
+        """엘스피 알림 전송 (응답 없음)"""
+        try:
+            if language not in self.clients or not self.clients[language]['initialized']:
+                return
+            
+            client = self.clients[language]
+            process = client['process']
+            
+            # LSP 알림 구성
+            notification = {
+                'jsonrpc': '2.0',
+                'method': method,
+                'params': params
+            }
+            
+            # Content-Length 헤더와 함께 전송
+            content = json.dumps(notification)
+            content_bytes = content.encode('utf-8')
+            request_data = f"Content-Length: {len(content_bytes)}\r\n\r\n{content}"
+            
+            process.stdin.write(request_data.encode())
+            await process.stdin.drain()
+            
+            logger.debug(f"{language} LSP 알림 전송: {method}")
+            
+        except Exception as e:
+            logger.error(f"LSP 알림 전송 실패: {e}")
+    
     async def _send_lsp_request(self, language: str, method: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """LSP 요청 전송"""
+        """LSP 요청 전송 - 비동기 Future 기반"""
         try:
             if language not in self.clients or not self.clients[language]['initialized']:
                 return None
@@ -237,26 +508,39 @@ class LSPService:
             client = self.clients[language]
             process = client['process']
             
+            # 요청 ID 생성
+            request_id = self._get_next_request_id()
+            
             # LSP 요청 구성
             request = {
                 'jsonrpc': '2.0',
-                'id': self._get_next_request_id(),
+                'id': request_id,
                 'method': method,
                 'params': params
             }
             
-            # 요청 전송
-            request_data = json.dumps(request) + '\n'
+            # Content-Length 헤더와 함께 전송 (바이트 길이 계산)
+            content = json.dumps(request)
+            content_bytes = content.encode('utf-8')
+            request_data = f"Content-Length: {len(content_bytes)}\r\n\r\n{content}"
+            
             process.stdin.write(request_data.encode())
             await process.stdin.drain()
             
-            # 응답 읽기
-            response_data = await process.stdout.readline()
-            if response_data:
-                response = json.loads(response_data.decode())
-                return response.get('result')
+            # Future 생성 및 대기
+            future = asyncio.Future()
+            self._response_futures[language][request_id] = future
             
-            return None
+            # 응답 대기 (무한 대기 방지)
+            try:
+                result = await future
+                return result
+            except Exception as e:
+                logger.error(f"{language} LSP 요청 실패: {e}")
+                return None
+            finally:
+                # Future 정리
+                self._response_futures[language].pop(request_id, None)
             
         except Exception as e:
             logger.error(f"LSP 요청 실패: {e}")
@@ -398,10 +682,14 @@ class LSPService:
             return None
     
     async def get_document_symbols(self, filepath: str) -> List[DocumentSymbol]:
-        """문서 심볼 제공 - 원본 executeSymbolProvider 함수 포팅"""
+        """문서 심볼 제공 - 파일 열기 후 심볼 추출"""
         try:
             language = self._get_language_from_file(filepath)
             
+            # 1. 파일을 LSP 서버에 열기 (textDocument/didOpen)
+            await self._open_document(filepath, language)
+            
+            # 2. 심볼 요청
             params = {
                 'textDocument': {
                     'uri': f'file://{filepath}'
@@ -413,39 +701,72 @@ class LSPService:
             if not result:
                 return []
             
-            # 결과를 DocumentSymbol 객체로 변환
+            # 결과를 DocumentSymbol 객체로 변환 (SymbolInformation 형식 처리)
             symbols = []
             for item in result:
-                symbol = DocumentSymbol(
-                    name=item['name'],
-                    range=LSPRange(
-                        start=LSPPosition(
-                            line=item['range']['start']['line'],
-                            character=item['range']['start']['character']
+                # pylsp는 SymbolInformation 형식으로 응답 (location.range)
+                if 'location' in item and 'range' in item['location']:
+                    location_range = item['location']['range']
+                    symbol = DocumentSymbol(
+                        name=item['name'],
+                        range=LSPRange(
+                            start=LSPPosition(
+                                line=location_range['start']['line'],
+                                character=location_range['start']['character']
+                            ),
+                            end=LSPPosition(
+                                line=location_range['end']['line'],
+                                character=location_range['end']['character']
+                            )
                         ),
-                        end=LSPPosition(
-                            line=item['range']['end']['line'],
-                            character=item['range']['end']['character']
-                        )
-                    ),
-                    selection_range=LSPRange(
-                        start=LSPPosition(
-                            line=item['selectionRange']['start']['line'],
-                            character=item['selectionRange']['start']['character']
+                        selection_range=LSPRange(
+                            start=LSPPosition(
+                                line=location_range['start']['line'],
+                                character=location_range['start']['character']
+                            ),
+                            end=LSPPosition(
+                                line=location_range['end']['line'],
+                                character=location_range['end']['character']
+                            )
                         ),
-                        end=LSPPosition(
-                            line=item['selectionRange']['end']['line'],
-                            character=item['selectionRange']['end']['character']
-                        )
-                    ),
-                    kind=item['kind']
-                )
-                symbols.append(symbol)
+                        kind=item['kind']
+                    )
+                    symbols.append(symbol)
+                # DocumentSymbol 형식도 지원 (range 직접 접근)
+                elif 'range' in item:
+                    symbol = DocumentSymbol(
+                        name=item['name'],
+                        range=LSPRange(
+                            start=LSPPosition(
+                                line=item['range']['start']['line'],
+                                character=item['range']['start']['character']
+                            ),
+                            end=LSPPosition(
+                                line=item['range']['end']['line'],
+                                character=item['range']['end']['character']
+                            )
+                        ),
+                        selection_range=LSPRange(
+                            start=LSPPosition(
+                                line=item.get('selectionRange', item['range'])['start']['line'],
+                                character=item.get('selectionRange', item['range'])['start']['character']
+                            ),
+                            end=LSPPosition(
+                                line=item.get('selectionRange', item['range'])['end']['line'],
+                                character=item.get('selectionRange', item['range'])['end']['character']
+                            )
+                        ),
+                        kind=item['kind']
+                    )
+                    symbols.append(symbol)
+                else:
+                    logger.warning(f"알 수 없는 심볼 형식: {item}")
             
             return symbols
             
         except Exception as e:
             logger.error(f"문서 심볼 제공 실패: {e}")
+            logger.debug(f"심볼 응답 내용: {result}")
             return []
     
     async def get_semantic_symbols(self, filepath: str) -> List[Dict[str, Any]]:
@@ -611,6 +932,18 @@ class LSPService:
                 except Exception as e:
                     logger.error(f"LSP 서버 종료 실패 {language}: {e}")
             
+            # Reader task들 정리
+            for language, task in self._reader_tasks.items():
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+            
+            self._reader_tasks.clear()
+            self._response_futures.clear()
+            self._message_queues.clear()
             self.clients.clear()
             logger.info("LSP 서비스 종료 완료")
             

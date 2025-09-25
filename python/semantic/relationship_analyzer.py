@@ -397,41 +397,99 @@ class RelationshipAnalyzer:
             return []
     
     def _extract_function_calls(self, content: str) -> List[Dict[str, Any]]:
-        """함수 호출 추출"""
+        """함수 호출 추출 - 실제 호출자 식별"""
         function_calls = []
         lines = content.split('\n')
         
         for i, line in enumerate(lines):
-            # 함수 호출 패턴 찾기
-            matches = re.findall(r'(\w+)\s*\(', line)
+            # 함수 호출 패턴 찾기 (더 정확한 패턴)
+            matches = re.findall(r'(?:\w+\.)?(\w+)\s*\(', line)
             for match in matches:
+                # 호출자 식별 시도
+                caller = self._identify_caller(line, i, lines)
                 function_calls.append({
                     'function': match,
-                    'callers': ['unknown'],  # 실제로는 호출자 분석 필요
+                    'callers': [caller] if caller else ['module'],
                     'line': i,
                     'context': line.strip()
                 })
         
         return function_calls
     
+    def _identify_caller(self, line: str, line_num: int, all_lines: List[str]) -> str:
+        """호출자 식별 - 클래스나 함수 내부에서 호출되는지 확인"""
+        # 현재 라인에서 클래스/함수 정의 찾기
+        for i in range(line_num, -1, -1):
+            prev_line = all_lines[i].strip()
+            
+            # 클래스 정의
+            if prev_line.startswith('class '):
+                match = re.match(r'class\s+(\w+)', prev_line)
+                if match:
+                    return match.group(1)
+            
+            # 함수 정의
+            elif prev_line.startswith('def '):
+                match = re.match(r'def\s+(\w+)', prev_line)
+                if match:
+                    return match.group(1)
+            
+            # self. 호출인 경우
+            if 'self.' in line:
+                return 'self'
+        
+        return 'module'  # 모듈 레벨 호출
+    
     def _extract_variable_references(self, content: str) -> List[Dict[str, Any]]:
-        """변수 참조 추출"""
+        """변수 참조 추출 - 실제 사용자 식별"""
         variable_references = []
         lines = content.split('\n')
         
         for i, line in enumerate(lines):
-            # 변수 참조 패턴 찾기
-            matches = re.findall(r'\b(\w+)\b', line)
+            # 변수 참조 패턴 찾기 (더 정확한 패턴)
+            matches = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', line)
             for match in matches:
-                if not match.isdigit():  # 숫자는 제외
+                if not match.isdigit() and match not in ['def', 'class', 'if', 'for', 'while', 'return', 'import', 'from']:
+                    # 사용자 식별 시도
+                    user = self._identify_variable_user(line, i, lines, match)
                     variable_references.append({
                         'variable': match,
-                        'users': ['unknown'],  # 실제로는 사용자 분석 필요
+                        'users': [user] if user else ['module'],
                         'line': i,
                         'context': line.strip()
                     })
         
         return variable_references
+    
+    def _identify_variable_user(self, line: str, line_num: int, all_lines: List[str], variable: str) -> str:
+        """변수 사용자 식별 - 어떤 컨텍스트에서 사용되는지 확인"""
+        # import 문에서 사용되는 경우
+        if 'import' in line:
+            return 'import_statement'
+        
+        # 함수 호출에서 사용되는 경우
+        if '(' in line and variable in line:
+            return 'function_call'
+        
+        # 변수 할당에서 사용되는 경우
+        if '=' in line and variable in line:
+            return 'assignment'
+        
+        # 클래스나 함수 내부에서 사용되는 경우
+        for i in range(line_num, -1, -1):
+            prev_line = all_lines[i].strip()
+            
+            if prev_line.startswith('class '):
+                match = re.match(r'class\s+(\w+)', prev_line)
+                if match:
+                    return f'class_{match.group(1)}'
+            
+            elif prev_line.startswith('def '):
+                match = re.match(r'def\s+(\w+)', prev_line)
+                if match:
+                    return f'function_{match.group(1)}'
+        
+        return 'module'  # 모듈 레벨 사용
     
     def _calculate_relationship_strength(self, relationship: Relationship) -> float:
         """관계 강도 계산"""
