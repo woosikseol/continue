@@ -110,7 +110,7 @@ class FileAnalyzer:
         return language_map.get(ext, 'unknown')
     
     async def analyze_file(self, filepath: str) -> AnalysisResult:
-        """파일 분석 - 원본 analyzeFile 함수의 Python 포팅"""
+        """파일 분석 - 원본 analyzeFile 함수의 Python 포팅 + 요청하신 AST 분석 기능"""
         try:
             # 파일 내용 읽기
             with open(filepath, 'r', encoding='utf-8') as f:
@@ -134,11 +134,23 @@ class FileAnalyzer:
                 children_count=len(ast.children) if ast else 0
             )
             
-            # 분석 통계
+            # 요청하신 AST 분석 단계들 구현
+            ast_metadata = self.tree_sitter_service.extract_ast_metadata(ast, filepath) if ast else {}
+            structural_metrics = self.tree_sitter_service.get_structural_metrics(ast) if ast else {}
+            
+            # 분석 통계 (기존 + 새로운 메트릭)
             analysis = {
                 'total_nodes': self.tree_sitter_service.count_nodes(ast),
                 'max_depth': self.tree_sitter_service.get_max_depth(ast),
-                'node_types': self.tree_sitter_service.get_node_types(ast)
+                'node_types': self.tree_sitter_service.get_node_types(ast),
+                'structural_metrics': structural_metrics,
+                'ast_metadata': ast_metadata,
+                'parsing_info': {
+                    'language': language,
+                    'file_size': len(contents),
+                    'line_count': len(contents.split('\n')),
+                    'parsing_success': ast is not None
+                }
             }
             
             return AnalysisResult(
