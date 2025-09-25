@@ -7,8 +7,9 @@ __pycache__/
 *.so
 
 
-python/vendor/
 .gitignore
+core/util/tree-sitter-wasms
+python/vendor/
 
 # Distribution / packaging
 .Python

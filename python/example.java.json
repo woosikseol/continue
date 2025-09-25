@@ -1,0 +1,705 @@
+{
+  "filepath": "example.java",
+  "language": "java",
+  "ast_root": {
+    "type": "program",
+    "text": "package com.continue.analysis;\n\nimport java.util.*;\nimport java.util.concurrent.*;\nimport java.util....",
+    "start_position": [
+      0,
+      0
+    ],
+    "end_position": [
+      331,
+      1
+    ],
+    "children_count": 10
+  },
+  "symbols": [
+    {
+      "filepath": "example.java",
+      "type": "class_declaration",
+      "name": "TestExample",
+      "range": {
+        "start": {
+          "line": 14,
+          "character": 0
+        },
+        "end": {
+          "line": 331,
+          "character": 1
+        }
+      },
+      "content": "public class TestExample {\n    \n    // 상수\n    private static final String VERSION = \"1.0.0\";\n    private static final int MAX_RETRIES = 3;\n    private static final Duration TIMEOUT = Duration.ofSeconds(30);\n    \n    // 정적 변수\n    private static Map<String, Object> globalConfig = new HashMap<>();\n    private static List<AnalysisResult> results = new ArrayList<>();\n    \n    // 인스턴스 변수\n    private String name;\n    private int id;\n    private boolean active;\n    private List<String> features;\n    \n    // 생성자\n    public TestExample() {\n        this.name = \"Default\";\n        this.id = 0;\n        this.active = true;\n        this.features = new ArrayList<>();\n    }\n    \n    public TestExample(String name, int id) {\n        this.name = name;\n        this.id = id;\n        this.active = true;\n        this.features = new ArrayList<>();\n    }\n    \n    // 추상 클래스\n    public static abstract class BaseAnalyzer {\n        protected String analyzerName;\n        protected List<AnalysisResult> results;\n        \n        public BaseAnalyzer(String name) {\n            this.analyzerName = name;\n            this.results = new ArrayList<>();\n        }\n        \n        public abstract AnalysisResult analyze(String filepath) throws AnalysisException;\n        \n        public List<AnalysisResult> getResults() {\n            return new ArrayList<>(results);\n        }\n    }\n    \n    // 구체 클래스\n    public static class TreeSitterAnalyzer extends BaseAnalyzer {\n        private TreeSitterService service;\n        \n        public TreeSitterAnalyzer() {\n            super(\"TreeSitterAnalyzer\");\n            this.service = new TreeSitterService();\n        }\n        \n        @Override\n        public AnalysisResult analyze(String filepath) throws AnalysisException {\n            try {\n                String content = Files.readString(Paths.get(filepath));\n                ASTNode ast = service.parseAST(content);\n                List<Symbol> symbols = service.extractSymbols(ast);\n                \n                return new AnalysisResult(\n                    filepath,\n                    ast.getNodeCount(),\n                    ast.getMaxDepth(),\n                    symbols.size(),\n                    service.getNodeTypes(ast)\n                );\n            } catch (IOException e) {\n                throw new AnalysisException(\"파일 읽기 실패: \" + e.getMessage(), 1001);\n            }\n        }\n    }\n    \n    public static class LSPAnalyzer extends BaseAnalyzer {\n        private LSPService service;\n        \n        public LSPAnalyzer() {\n            super(\"LSPAnalyzer\");\n            this.service = new LSPService();\n        }\n        \n        @Override\n        public AnalysisResult analyze(String filepath) throws AnalysisException {\n            try {\n                List<DocumentSymbol> symbols = service.getDocumentSymbols(filepath);\n                return new AnalysisResult(\n                    filepath,\n                    symbols.size(),\n                    symbols.stream()\n                        .map(s -> s.getName())\n                        .collect(Collectors.toList())\n                );\n            } catch (Exception e) {\n                throw new AnalysisException(\"LSP 분석 실패: \" + e.getMessage(), 1002);\n            }\n        }\n    }\n    \n    // 메인 클래스\n    public static class ContinueAnalyzer {\n        private TreeSitterAnalyzer treeSitterAnalyzer;\n        private LSPAnalyzer lspAnalyzer;\n        private Map<String, Object> config;\n        \n        public ContinueAnalyzer() {\n            this.treeSitterAnalyzer = new TreeSitterAnalyzer();\n            this.lspAnalyzer = new LSPAnalyzer();\n            this.config = new HashMap<>();\n            initializeConfig();\n        }\n        \n        private void initializeConfig() {\n            config.put(\"debug\", true);\n            config.put(\"version\", VERSION);\n            config.put(\"features\", Arrays.asList(\"tree_sitter\", \"lsp\", \"autocomplete\"));\n        }\n        \n        public AnalysisResult analyzeFile(String filepath, AnalysisType type) throws AnalysisException {\n            switch (type) {\n                case TREE_SITTER:\n                    return treeSitterAnalyzer.analyze(filepath);\n                case LSP:\n                    return lspAnalyzer.analyze(filepath);\n                case COMBINED:\n                    AnalysisResult treeSitterResult = treeSitterAnalyzer.analyze(filepath);\n                    AnalysisResult lspResult = lspAnalyzer.analyze(filepath);\n                    return combineResults(treeSitterResult, lspResult);\n                default:\n                    throw new AnalysisException(\"지원하지 않는 분석 타입: \" + type, 1003);\n            }\n        }\n        \n        private AnalysisResult combineResults(AnalysisResult treeSitter, AnalysisResult lsp) {\n            return new AnalysisResult(\n                treeSitter.getFilepath(),\n                treeSitter.getNodeCount() + lsp.getSymbolCount(),\n                Math.max(treeSitter.getMaxDepth(), lsp.getMaxDepth()),\n                treeSitter.getSymbolCount() + lsp.getSymbolCount(),\n                new HashMap<>()\n            );\n        }\n        \n        public List<CompletionItem> getCompletions(String filepath, Position position) {\n            try {\n                return lspAnalyzer.service.getCompletions(filepath, position);\n            } catch (Exception e) {\n                System.err.println(\"자동완성 실패: \" + e.getMessage());\n                return new ArrayList<>();\n            }\n        }\n        \n        public List<ContextItem> getContext(String query, String filepath) {\n            try {\n                return lspAnalyzer.service.getContext(query, filepath);\n            } catch (Exception e) {\n                System.err.println(\"컨텍스트 제공 실패: \" + e.getMessage());\n                return new ArrayList<>();\n            }\n        }\n    }\n    \n    // 열거형\n    public enum AnalysisType {\n        TREE_SITTER,\n        LSP,\n        COMBINED\n    }\n    \n    // 예외 클래스\n    public static class AnalysisException extends Exception {\n        private int code;\n        \n        public AnalysisException(String message, int code) {\n            super(message);\n            this.code = code;\n        }\n        \n        public int getCode() {\n            return code;\n        }\n    }\n    \n    // 데이터 클래스\n    public static class AnalysisResult {\n        private String filepath;\n        private int nodeCount;\n        private int maxDepth;\n        private int symbolCount;\n        private Map<String, Integer> nodeTypes;\n        private List<String> symbols;\n        \n        public AnalysisResult(String filepath, int nodeCount, int maxDepth, int symbolCount, Map<String, Integer> nodeTypes) {\n            this.filepath = filepath;\n            this.nodeCount = nodeCount;\n            this.maxDepth = maxDepth;\n            this.symbolCount = symbolCount;\n            this.nodeTypes = nodeTypes;\n            this.symbols = new ArrayList<>();\n        }\n        \n        public AnalysisResult(String filepath, int symbolCount, List<String> symbols) {\n            this.filepath = filepath;\n            this.nodeCount = 0;\n            this.maxDepth = 0;\n            this.symbolCount = symbolCount;\n            this.nodeTypes = new HashMap<>();\n            this.symbols = symbols;\n        }\n        \n        // Getters\n        public String getFilepath() { return filepath; }\n        public int getNodeCount() { return nodeCount; }\n        public int getMaxDepth() { return maxDepth; }\n        public int getSymbolCount() { return symbolCount; }\n        public Map<String, Integer> getNodeTypes() { return nodeTypes; }\n        public List<String> getSymbols() { return symbols; }\n    }\n    \n    // 인터페이스\n    public interface Analyzer {\n        AnalysisResult analyze(String filepath) throws AnalysisException;\n        String getName();\n    }\n    \n    public interface Configurable {\n        void setConfig(Map<String, Object> config);\n        Map<String, Object> getConfig();\n    }\n    \n    // 제네릭 클래스\n    public static class ResultContainer<T> {\n        private T data;\n        private boolean success;\n        private String errorMessage;\n        \n        public ResultContainer(T data) {\n            this.data = data;\n            this.success = true;\n        }\n        \n        public ResultContainer(String errorMessage) {\n            this.errorMessage = errorMessage;\n            this.success = false;\n        }\n        \n        public T getData() { return data; }\n        public boolean isSuccess() { return success; }\n        public String getErrorMessage() { return errorMessage; }\n    }\n    \n    // 메인 메서드\n    public static void main(String[] args) {\n        System.out.println(\"Continue Java 분석 테스트 시작\");\n        System.out.println(\"=\".repeat(50));\n        \n        try {\n            ContinueAnalyzer analyzer = new ContinueAnalyzer();\n            \n            // 현재 파일 분석\n            String currentFile = \"TestExample.java\";\n            AnalysisResult result = analyzer.analyzeFile(currentFile, AnalysisType.COMBINED);\n            \n            System.out.println(\"분석 결과:\");\n            System.out.println(\"  파일: \" + result.getFilepath());\n            System.out.println(\"  노드 수: \" + result.getNodeCount());\n            System.out.println(\"  최대 깊이: \" + result.getMaxDepth());\n            System.out.println(\"  심볼 수: \" + result.getSymbolCount());\n            System.out.println(\"  노드 타입: \" + result.getNodeTypes());\n            \n            // 자동완성 테스트\n            Position position = new Position(50, 10);\n            List<CompletionItem> completions = analyzer.getCompletions(currentFile, position);\n            System.out.println(\"  자동완성 항목 수: \" + completions.size());\n            \n            // 컨텍스트 테스트\n            List<ContextItem> contextItems = analyzer.getContext(\"function\", currentFile);\n            System.out.println(\"  컨텍스트 항목 수: \" + contextItems.size());\n            \n            System.out.println(\"모든 테스트 완료!\");\n            \n        } catch (AnalysisException e) {\n            System.err.println(\"분석 실패: \" + e.getMessage() + \" (코드: \" + e.getCode() + \")\");\n        }\n    }\n    \n    // 유틸리티 메서드들\n    public static int calculateComplexity(List<Symbol> symbols) {\n        return symbols.size() * 2 + 10;\n    }\n    \n    public static String formatResult(AnalysisResult result) {\n        return String.format(\n            \"파일: %s, 노드: %d, 깊이: %d, 심볼: %d\",\n            result.getFilepath(),\n            result.getNodeCount(),\n            result.getMaxDepth(),\n            result.getSymbolCount()\n        );\n    }\n    \n    // 람다 표현식과 스트림 사용\n    public static List<String> filterSymbols(List<Symbol> symbols, String prefix) {\n        return symbols.stream()\n            .filter(s -> s.getName().startsWith(prefix))\n            .map(Symbol::getName)\n            .collect(Collectors.toList());\n    }\n    \n    // 메서드 참조 사용\n    public static void printSymbols(List<Symbol> symbols) {\n        symbols.forEach(System.out::println);\n    }\n}"
+    },
+    {
+      "filepath": "example.java",
+      "type": "class_declaration",
+      "name": "BaseAnalyzer",
+      "range": {
+        "start": {
+          "line": 47,
+          "character": 4
+        },
+        "end": {
+          "line": 61,
+          "character": 5
+        }
+      },
+      "content": "public static abstract class BaseAnalyzer {\n        protected String analyzerName;\n        protected List<AnalysisResult> results;\n        \n        public BaseAnalyzer(String name) {\n            this.analyzerName = name;\n            this.results = new ArrayList<>();\n        }\n        \n        public abstract AnalysisResult analyze(String filepath) throws AnalysisException;\n        \n        public List<AnalysisResult> getResults() {\n            return new ArrayList<>(results);\n        }\n    }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "analyze",
+      "range": {
+        "start": {
+          "line": 56,
+          "character": 8
+        },
+        "end": {
+          "line": 56,
+          "character": 89
+        }
+      },
+      "content": "public abstract AnalysisResult analyze(String filepath) throws AnalysisException;"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getResults",
+      "range": {
+        "start": {
+          "line": 58,
+          "character": 8
+        },
+        "end": {
+          "line": 60,
+          "character": 9
+        }
+      },
+      "content": "public List<AnalysisResult> getResults() {\n            return new ArrayList<>(results);\n        }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "class_declaration",
+      "name": "TreeSitterAnalyzer",
+      "range": {
+        "start": {
+          "line": 64,
+          "character": 4
+        },
+        "end": {
+          "line": 90,
+          "character": 5
+        }
+      },
+      "content": "public static class TreeSitterAnalyzer extends BaseAnalyzer {\n        private TreeSitterService service;\n        \n        public TreeSitterAnalyzer() {\n            super(\"TreeSitterAnalyzer\");\n            this.service = new TreeSitterService();\n        }\n        \n        @Override\n        public AnalysisResult analyze(String filepath) throws AnalysisException {\n            try {\n                String content = Files.readString(Paths.get(filepath));\n                ASTNode ast = service.parseAST(content);\n                List<Symbol> symbols = service.extractSymbols(ast);\n                \n                return new AnalysisResult(\n                    filepath,\n                    ast.getNodeCount(),\n                    ast.getMaxDepth(),\n                    symbols.size(),\n                    service.getNodeTypes(ast)\n                );\n            } catch (IOException e) {\n                throw new AnalysisException(\"파일 읽기 실패: \" + e.getMessage(), 1001);\n            }\n        }\n    }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "analyze",
+      "range": {
+        "start": {
+          "line": 72,
+          "character": 8
+        },
+        "end": {
+          "line": 89,
+          "character": 9
+        }
+      },
+      "content": "@Override\n        public AnalysisResult analyze(String filepath) throws AnalysisException {\n            try {\n                String content = Files.readString(Paths.get(filepath));\n                ASTNode ast = service.parseAST(content);\n                List<Symbol> symbols = service.extractSymbols(ast);\n                \n                return new AnalysisResult(\n                    filepath,\n                    ast.getNodeCount(),\n                    ast.getMaxDepth(),\n                    symbols.size(),\n                    service.getNodeTypes(ast)\n                );\n            } catch (IOException e) {\n                throw new AnalysisException(\"파일 읽기 실패: \" + e.getMessage(), 1001);\n            }\n        }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "class_declaration",
+      "name": "LSPAnalyzer",
+      "range": {
+        "start": {
+          "line": 92,
+          "character": 4
+        },
+        "end": {
+          "line": 115,
+          "character": 5
+        }
+      },
+      "content": "public static class LSPAnalyzer extends BaseAnalyzer {\n        private LSPService service;\n        \n        public LSPAnalyzer() {\n            super(\"LSPAnalyzer\");\n            this.service = new LSPService();\n        }\n        \n        @Override\n        public AnalysisResult analyze(String filepath) throws AnalysisException {\n            try {\n                List<DocumentSymbol> symbols = service.getDocumentSymbols(filepath);\n                return new AnalysisResult(\n                    filepath,\n                    symbols.size(),\n                    symbols.stream()\n                        .map(s -> s.getName())\n                        .collect(Collectors.toList())\n                );\n            } catch (Exception e) {\n                throw new AnalysisException(\"LSP 분석 실패: \" + e.getMessage(), 1002);\n            }\n        }\n    }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "analyze",
+      "range": {
+        "start": {
+          "line": 100,
+          "character": 8
+        },
+        "end": {
+          "line": 114,
+          "character": 9
+        }
+      },
+      "content": "@Override\n        public AnalysisResult analyze(String filepath) throws AnalysisException {\n            try {\n                List<DocumentSymbol> symbols = service.getDocumentSymbols(filepath);\n                return new AnalysisResult(\n                    filepath,\n                    symbols.size(),\n                    symbols.stream()\n                        .map(s -> s.getName())\n                        .collect(Collectors.toList())\n                );\n            } catch (Exception e) {\n                throw new AnalysisException(\"LSP 분석 실패: \" + e.getMessage(), 1002);\n            }\n        }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "class_declaration",
+      "name": "ContinueAnalyzer",
+      "range": {
+        "start": {
+          "line": 118,
+          "character": 4
+        },
+        "end": {
+          "line": 178,
+          "character": 5
+        }
+      },
+      "content": "public static class ContinueAnalyzer {\n        private TreeSitterAnalyzer treeSitterAnalyzer;\n        private LSPAnalyzer lspAnalyzer;\n        private Map<String, Object> config;\n        \n        public ContinueAnalyzer() {\n            this.treeSitterAnalyzer = new TreeSitterAnalyzer();\n            this.lspAnalyzer = new LSPAnalyzer();\n            this.config = new HashMap<>();\n            initializeConfig();\n        }\n        \n        private void initializeConfig() {\n            config.put(\"debug\", true);\n            config.put(\"version\", VERSION);\n            config.put(\"features\", Arrays.asList(\"tree_sitter\", \"lsp\", \"autocomplete\"));\n        }\n        \n        public AnalysisResult analyzeFile(String filepath, AnalysisType type) throws AnalysisException {\n            switch (type) {\n                case TREE_SITTER:\n                    return treeSitterAnalyzer.analyze(filepath);\n                case LSP:\n                    return lspAnalyzer.analyze(filepath);\n                case COMBINED:\n                    AnalysisResult treeSitterResult = treeSitterAnalyzer.analyze(filepath);\n                    AnalysisResult lspResult = lspAnalyzer.analyze(filepath);\n                    return combineResults(treeSitterResult, lspResult);\n                default:\n                    throw new AnalysisException(\"지원하지 않는 분석 타입: \" + type, 1003);\n            }\n        }\n        \n        private AnalysisResult combineResults(AnalysisResult treeSitter, AnalysisResult lsp) {\n            return new AnalysisResult(\n                treeSitter.getFilepath(),\n                treeSitter.getNodeCount() + lsp.getSymbolCount(),\n                Math.max(treeSitter.getMaxDepth(), lsp.getMaxDepth()),\n                treeSitter.getSymbolCount() + lsp.getSymbolCount(),\n                new HashMap<>()\n            );\n        }\n        \n        public List<CompletionItem> getCompletions(String filepath, Position position) {\n            try {\n                return lspAnalyzer.service.getCompletions(filepath, position);\n            } catch (Exception e) {\n                System.err.println(\"자동완성 실패: \" + e.getMessage());\n                return new ArrayList<>();\n            }\n        }\n        \n        public List<ContextItem> getContext(String query, String filepath) {\n            try {\n                return lspAnalyzer.service.getContext(query, filepath);\n            } catch (Exception e) {\n                System.err.println(\"컨텍스트 제공 실패: \" + e.getMessage());\n                return new ArrayList<>();\n            }\n        }\n    }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "initializeConfig",
+      "range": {
+        "start": {
+          "line": 130,
+          "character": 8
+        },
+        "end": {
+          "line": 134,
+          "character": 9
+        }
+      },
+      "content": "private void initializeConfig() {\n            config.put(\"debug\", true);\n            config.put(\"version\", VERSION);\n            config.put(\"features\", Arrays.asList(\"tree_sitter\", \"lsp\", \"autocomplete\"));\n        }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "analyzeFile",
+      "range": {
+        "start": {
+          "line": 136,
+          "character": 8
+        },
+        "end": {
+          "line": 149,
+          "character": 9
+        }
+      },
+      "content": "public AnalysisResult analyzeFile(String filepath, AnalysisType type) throws AnalysisException {\n            switch (type) {\n                case TREE_SITTER:\n                    return treeSitterAnalyzer.analyze(filepath);\n                case LSP:\n                    return lspAnalyzer.analyze(filepath);\n                case COMBINED:\n                    AnalysisResult treeSitterResult = treeSitterAnalyzer.analyze(filepath);\n                    AnalysisResult lspResult = lspAnalyzer.analyze(filepath);\n                    return combineResults(treeSitterResult, lspResult);\n                default:\n                    throw new AnalysisException(\"지원하지 않는 분석 타입: \" + type, 1003);\n            }\n        }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "combineResults",
+      "range": {
+        "start": {
+          "line": 151,
+          "character": 8
+        },
+        "end": {
+          "line": 159,
+          "character": 9
+        }
+      },
+      "content": "private AnalysisResult combineResults(AnalysisResult treeSitter, AnalysisResult lsp) {\n            return new AnalysisResult(\n                treeSitter.getFilepath(),\n                treeSitter.getNodeCount() + lsp.getSymbolCount(),\n                Math.max(treeSitter.getMaxDepth(), lsp.getMaxDepth()),\n                treeSitter.getSymbolCount() + lsp.getSymbolCount(),\n                new HashMap<>()\n            );\n        }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getCompletions",
+      "range": {
+        "start": {
+          "line": 161,
+          "character": 8
+        },
+        "end": {
+          "line": 168,
+          "character": 9
+        }
+      },
+      "content": "public List<CompletionItem> getCompletions(String filepath, Position position) {\n            try {\n                return lspAnalyzer.service.getCompletions(filepath, position);\n            } catch (Exception e) {\n                System.err.println(\"자동완성 실패: \" + e.getMessage());\n                return new ArrayList<>();\n            }\n        }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getContext",
+      "range": {
+        "start": {
+          "line": 170,
+          "character": 8
+        },
+        "end": {
+          "line": 177,
+          "character": 9
+        }
+      },
+      "content": "public List<ContextItem> getContext(String query, String filepath) {\n            try {\n                return lspAnalyzer.service.getContext(query, filepath);\n            } catch (Exception e) {\n                System.err.println(\"컨텍스트 제공 실패: \" + e.getMessage());\n                return new ArrayList<>();\n            }\n        }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "class_declaration",
+      "name": "AnalysisException",
+      "range": {
+        "start": {
+          "line": 188,
+          "character": 4
+        },
+        "end": {
+          "line": 199,
+          "character": 5
+        }
+      },
+      "content": "public static class AnalysisException extends Exception {\n        private int code;\n        \n        public AnalysisException(String message, int code) {\n            super(message);\n            this.code = code;\n        }\n        \n        public int getCode() {\n            return code;\n        }\n    }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getCode",
+      "range": {
+        "start": {
+          "line": 196,
+          "character": 8
+        },
+        "end": {
+          "line": 198,
+          "character": 9
+        }
+      },
+      "content": "public int getCode() {\n            return code;\n        }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "class_declaration",
+      "name": "AnalysisResult",
+      "range": {
+        "start": {
+          "line": 202,
+          "character": 4
+        },
+        "end": {
+          "line": 235,
+          "character": 5
+        }
+      },
+      "content": "public static class AnalysisResult {\n        private String filepath;\n        private int nodeCount;\n        private int maxDepth;\n        private int symbolCount;\n        private Map<String, Integer> nodeTypes;\n        private List<String> symbols;\n        \n        public AnalysisResult(String filepath, int nodeCount, int maxDepth, int symbolCount, Map<String, Integer> nodeTypes) {\n            this.filepath = filepath;\n            this.nodeCount = nodeCount;\n            this.maxDepth = maxDepth;\n            this.symbolCount = symbolCount;\n            this.nodeTypes = nodeTypes;\n            this.symbols = new ArrayList<>();\n        }\n        \n        public AnalysisResult(String filepath, int symbolCount, List<String> symbols) {\n            this.filepath = filepath;\n            this.nodeCount = 0;\n            this.maxDepth = 0;\n            this.symbolCount = symbolCount;\n            this.nodeTypes = new HashMap<>();\n            this.symbols = symbols;\n        }\n        \n        // Getters\n        public String getFilepath() { return filepath; }\n        public int getNodeCount() { return nodeCount; }\n        public int getMaxDepth() { return maxDepth; }\n        public int getSymbolCount() { return symbolCount; }\n        public Map<String, Integer> getNodeTypes() { return nodeTypes; }\n        public List<String> getSymbols() { return symbols; }\n    }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getFilepath",
+      "range": {
+        "start": {
+          "line": 229,
+          "character": 8
+        },
+        "end": {
+          "line": 229,
+          "character": 56
+        }
+      },
+      "content": "public String getFilepath() { return filepath; }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getNodeCount",
+      "range": {
+        "start": {
+          "line": 230,
+          "character": 8
+        },
+        "end": {
+          "line": 230,
+          "character": 55
+        }
+      },
+      "content": "public int getNodeCount() { return nodeCount; }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getMaxDepth",
+      "range": {
+        "start": {
+          "line": 231,
+          "character": 8
+        },
+        "end": {
+          "line": 231,
+          "character": 53
+        }
+      },
+      "content": "public int getMaxDepth() { return maxDepth; }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getSymbolCount",
+      "range": {
+        "start": {
+          "line": 232,
+          "character": 8
+        },
+        "end": {
+          "line": 232,
+          "character": 59
+        }
+      },
+      "content": "public int getSymbolCount() { return symbolCount; }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getNodeTypes",
+      "range": {
+        "start": {
+          "line": 233,
+          "character": 8
+        },
+        "end": {
+          "line": 233,
+          "character": 72
+        }
+      },
+      "content": "public Map<String, Integer> getNodeTypes() { return nodeTypes; }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getSymbols",
+      "range": {
+        "start": {
+          "line": 234,
+          "character": 8
+        },
+        "end": {
+          "line": 234,
+          "character": 60
+        }
+      },
+      "content": "public List<String> getSymbols() { return symbols; }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "analyze",
+      "range": {
+        "start": {
+          "line": 239,
+          "character": 8
+        },
+        "end": {
+          "line": 239,
+          "character": 73
+        }
+      },
+      "content": "AnalysisResult analyze(String filepath) throws AnalysisException;"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getName",
+      "range": {
+        "start": {
+          "line": 240,
+          "character": 8
+        },
+        "end": {
+          "line": 240,
+          "character": 25
+        }
+      },
+      "content": "String getName();"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "setConfig",
+      "range": {
+        "start": {
+          "line": 244,
+          "character": 8
+        },
+        "end": {
+          "line": 244,
+          "character": 51
+        }
+      },
+      "content": "void setConfig(Map<String, Object> config);"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getConfig",
+      "range": {
+        "start": {
+          "line": 245,
+          "character": 8
+        },
+        "end": {
+          "line": 245,
+          "character": 40
+        }
+      },
+      "content": "Map<String, Object> getConfig();"
+    },
+    {
+      "filepath": "example.java",
+      "type": "class_declaration",
+      "name": "ResultContainer",
+      "range": {
+        "start": {
+          "line": 249,
+          "character": 4
+        },
+        "end": {
+          "line": 267,
+          "character": 5
+        }
+      },
+      "content": "public static class ResultContainer<T> {\n        private T data;\n        private boolean success;\n        private String errorMessage;\n        \n        public ResultContainer(T data) {\n            this.data = data;\n            this.success = true;\n        }\n        \n        public ResultContainer(String errorMessage) {\n            this.errorMessage = errorMessage;\n            this.success = false;\n        }\n        \n        public T getData() { return data; }\n        public boolean isSuccess() { return success; }\n        public String getErrorMessage() { return errorMessage; }\n    }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getData",
+      "range": {
+        "start": {
+          "line": 264,
+          "character": 8
+        },
+        "end": {
+          "line": 264,
+          "character": 43
+        }
+      },
+      "content": "public T getData() { return data; }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "isSuccess",
+      "range": {
+        "start": {
+          "line": 265,
+          "character": 8
+        },
+        "end": {
+          "line": 265,
+          "character": 54
+        }
+      },
+      "content": "public boolean isSuccess() { return success; }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "getErrorMessage",
+      "range": {
+        "start": {
+          "line": 266,
+          "character": 8
+        },
+        "end": {
+          "line": 266,
+          "character": 64
+        }
+      },
+      "content": "public String getErrorMessage() { return errorMessage; }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "main",
+      "range": {
+        "start": {
+          "line": 270,
+          "character": 4
+        },
+        "end": {
+          "line": 302,
+          "character": 5
+        }
+      },
+      "content": "public static void main(String[] args) {\n        System.out.println(\"Continue Java 분석 테스트 시작\");\n        System.out.println(\"=\".repeat(50));\n        \n        try {\n            ContinueAnalyzer analyzer = new ContinueAnalyzer();\n            \n            // 현재 파일 분석\n            String currentFile = \"TestExample.java\";\n            AnalysisResult result = analyzer.analyzeFile(currentFile, AnalysisType.COMBINED);\n            \n            System.out.println(\"분석 결과:\");\n            System.out.println(\"  파일: \" + result.getFilepath());\n            System.out.println(\"  노드 수: \" + result.getNodeCount());\n            System.out.println(\"  최대 깊이: \" + result.getMaxDepth());\n            System.out.println(\"  심볼 수: \" + result.getSymbolCount());\n            System.out.println(\"  노드 타입: \" + result.getNodeTypes());\n            \n            // 자동완성 테스트\n            Position position = new Position(50, 10);\n            List<CompletionItem> completions = analyzer.getCompletions(currentFile, position);\n            System.out.println(\"  자동완성 항목 수: \" + completions.size());\n            \n            // 컨텍스트 테스트\n            List<ContextItem> contextItems = analyzer.getContext(\"function\", currentFile);\n            System.out.println(\"  컨텍스트 항목 수: \" + contextItems.size());\n            \n            System.out.println(\"모든 테스트 완료!\");\n            \n        } catch (AnalysisException e) {\n            System.err.println(\"분석 실패: \" + e.getMessage() + \" (코드: \" + e.getCode() + \")\");\n        }\n    }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "calculateComplexity",
+      "range": {
+        "start": {
+          "line": 305,
+          "character": 4
+        },
+        "end": {
+          "line": 307,
+          "character": 5
+        }
+      },
+      "content": "public static int calculateComplexity(List<Symbol> symbols) {\n        return symbols.size() * 2 + 10;\n    }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "formatResult",
+      "range": {
+        "start": {
+          "line": 309,
+          "character": 4
+        },
+        "end": {
+          "line": 317,
+          "character": 5
+        }
+      },
+      "content": "public static String formatResult(AnalysisResult result) {\n        return String.format(\n            \"파일: %s, 노드: %d, 깊이: %d, 심볼: %d\",\n            result.getFilepath(),\n            result.getNodeCount(),\n            result.getMaxDepth(),\n            result.getSymbolCount()\n        );\n    }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "filterSymbols",
+      "range": {
+        "start": {
+          "line": 320,
+          "character": 4
+        },
+        "end": {
+          "line": 325,
+          "character": 5
+        }
+      },
+      "content": "public static List<String> filterSymbols(List<Symbol> symbols, String prefix) {\n        return symbols.stream()\n            .filter(s -> s.getName().startsWith(prefix))\n            .map(Symbol::getName)\n            .collect(Collectors.toList());\n    }"
+    },
+    {
+      "filepath": "example.java",
+      "type": "method_declaration",
+      "name": "printSymbols",
+      "range": {
+        "start": {
+          "line": 328,
+          "character": 4
+        },
+        "end": {
+          "line": 330,
+          "character": 5
+        }
+      },
+      "content": "public static void printSymbols(List<Symbol> symbols) {\n        symbols.forEach(System.out::println);\n    }"
+    }
+  ],
+  "analysis": {
+    "total_nodes": 2684,
+    "max_depth": 18,
+    "node_types": {
+      "program": 1,
+      "package_declaration": 1,
+      "package": 1,
+      "scoped_identifier": 13,
+      "identifier": 417,
+      ".": 149,
+      ";": 132,
+      "import_declaration": 7,
+      "import": 7,
+      "asterisk": 7,
+      "*": 8,
+      "block_comment": 1,
+      "class_declaration": 8,
+      "modifiers": 72,
+      "public": 44,
+      "class": 8,
+      "class_body": 8,
+      "{": 56,
+      "line_comment": 20,
+      "field_declaration": 26,
+      "private": 26,
+      "static": 17,
+      "final": 3,
+      "type_identifier": 145,
+      "variable_declarator": 38,
+      "=": 49,
+      "string_literal": 32,
+      "integral_type": 17,
+      "int": 17,
+      "decimal_integer_literal": 13,
+      "method_invocation": 81,
+      "argument_list": 108,
+      "(": 153,
+      ")": 153,
+      "generic_type": 36,
+      "type_arguments": 36,
+      "<": 37,
+      ",": 52,
+      ">": 37,
+      "object_creation_expression": 24,
+      "new": 24,
+      "boolean_type": 3,
+      "constructor_declaration": 11,
+      "formal_parameters": 39,
+      "constructor_body": 11,
+      "expression_statement": 51,
+      "assignment_expression": 32,
+      "field_access": 50,
+      "this": 32,
+      "true": 4,
+      "}": 56,
+      "formal_parameter": 34,
+      "abstract": 2,
+      "protected": 2,
+      "method_declaration": 28,
+      "throws": 10,
+      "block": 33,
+      "return_statement": 24,
+      "return": 24,
+      "superclass": 3,
+      "extends": 3,
+      "explicit_constructor_invocation": 3,
+      "super": 3,
+      "marker_annotation": 2,
+      "@": 2,
+      "try_statement": 5,
+      "try": 5,
+      "local_variable_declaration": 12,
+      "catch_clause": 5,
+      "catch": 5,
+      "catch_formal_parameter": 5,
+      "catch_type": 5,
+      "throw_statement": 3,
+      "throw": 3,
+      "binary_expression": 20,
+      "+": 19,
+      "lambda_expression": 2,
+      "->": 2,
+      "void_type": 4,
+      "switch_expression": 1,
+      "switch": 1,
+      "parenthesized_expression": 1,
+      "switch_block": 1,
+      "switch_block_statement_group": 4,
+      "switch_label": 4,
+      "case": 3,
+      ":": 4,
+      "default": 1,
+      "enum_declaration": 1,
+      "enum": 1,
+      "enum_body": 1,
+      "enum_constant": 3,
+      "interface_declaration": 2,
+      "interface": 2,
+      "interface_body": 2,
+      "type_parameters": 1,
+      "type_parameter": 1,
+      "false": 1,
+      "array_type": 1,
+      "dimensions": 1,
+      "[": 1,
+      "]": 1,
+      "method_reference": 2,
+      "::": 2
+    }
+  }
+}

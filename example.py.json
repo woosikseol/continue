@@ -1,0 +1,569 @@
+{
+  "filepath": "example.py",
+  "language": "python",
+  "ast_root": {
+    "type": "module",
+    "text": "#!/usr/bin/env python3\n\"\"\"\nContinue Python 포팅 테스트 예시 - 복잡한 구조\nTree-sitter와 LSP 분석을 위한 다양한 구문 요소 포함\n\"...",
+    "start_position": [
+      0,
+      0
+    ],
+    "end_position": [
+      308,
+      23
+    ],
+    "children_count": 49
+  },
+  "symbols": [
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "timing_decorator",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 40
+        },
+        "end": {
+          "character": 19,
+          "line": 49
+        }
+      },
+      "content": "def timing_decorator(func):\n    \"\"\"실행 시간 측정 데코레이터\"\"\"\n    def wrapper(*args, **kwargs):\n        start_time = datetime.now()\n        result = func(*args, **kwargs)\n        end_time = datetime.now()\n        print(f\"{func.__name__} 실행 시간: {(end_time - start_time).total_seconds():.2f}초\")\n        return result\n    return wrapper"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "wrapper",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 42
+        },
+        "end": {
+          "character": 22,
+          "line": 48
+        }
+      },
+      "content": "def wrapper(*args, **kwargs):\n        start_time = datetime.now()\n        result = func(*args, **kwargs)\n        end_time = datetime.now()\n        print(f\"{func.__name__} 실행 시간: {(end_time - start_time).total_seconds():.2f}초\")\n        return result"
+    },
+    {
+      "filepath": "example.py",
+      "type": "class_definition",
+      "name": "BaseAnalyzer",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 51
+        },
+        "end": {
+          "character": 28,
+          "line": 66
+        }
+      },
+      "content": "class BaseAnalyzer(ABC):\n    \"\"\"분석기 기본 클래스\"\"\"\n    \n    def __init__(self, name: str):\n        self.name = name\n        self.results = []\n    \n    @abstractmethod\n    async def analyze(self, data: Any) -> Dict[str, Any]:\n        \"\"\"분석 수행\"\"\"\n        pass\n    \n    def get_results(self) -> List[Dict[str, Any]]:\n        \"\"\"결과 반환\"\"\"\n        return self.results"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "__init__",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 54
+        },
+        "end": {
+          "character": 26,
+          "line": 57
+        }
+      },
+      "content": "def __init__(self, name: str):\n        self.name = name\n        self.results = []"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "analyze",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 59
+        },
+        "end": {
+          "character": 13,
+          "line": 62
+        }
+      },
+      "content": "async def analyze(self, data: Any) -> Dict[str, Any]:\n        \"\"\"분석 수행\"\"\"\n        pass"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "get_results",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 63
+        },
+        "end": {
+          "character": 28,
+          "line": 66
+        }
+      },
+      "content": "def get_results(self) -> List[Dict[str, Any]]:\n        \"\"\"결과 반환\"\"\"\n        return self.results"
+    },
+    {
+      "filepath": "example.py",
+      "type": "class_definition",
+      "name": "TreeSitterAnalyzer",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 68
+        },
+        "end": {
+          "character": 37,
+          "line": 92
+        }
+      },
+      "content": "class TreeSitterAnalyzer(BaseAnalyzer):\n    \"\"\"Tree-sitter 분석기\"\"\"\n    \n    def __init__(self):\n        super().__init__(\"TreeSitterAnalyzer\")\n        self.service = TreeSitterService()\n    \n    async def analyze(self, filepath: str) -> Dict[str, Any]:\n        \"\"\"Tree-sitter 분석 수행\"\"\"\n        try:\n            with open(filepath, 'r', encoding='utf-8') as f:\n                contents = f.read()\n            \n            ast = await self.service.get_ast(filepath, contents)\n            symbols = await self.service.get_symbols_for_file(filepath, contents)\n            \n            return {\n                \"ast_nodes\": self.service.count_nodes(ast),\n                \"max_depth\": self.service.get_max_depth(ast),\n                \"symbols_count\": len(symbols),\n                \"node_types\": self.service.get_node_types(ast)\n            }\n        except Exception as e:\n            return {\"error\": str(e)}"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "__init__",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 71
+        },
+        "end": {
+          "character": 43,
+          "line": 74
+        }
+      },
+      "content": "def __init__(self):\n        super().__init__(\"TreeSitterAnalyzer\")\n        self.service = TreeSitterService()"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "analyze",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 75
+        },
+        "end": {
+          "character": 37,
+          "line": 92
+        }
+      },
+      "content": "async def analyze(self, filepath: str) -> Dict[str, Any]:\n        \"\"\"Tree-sitter 분석 수행\"\"\"\n        try:\n            with open(filepath, 'r', encoding='utf-8') as f:\n                contents = f.read()\n            \n            ast = await self.service.get_ast(filepath, contents)\n            symbols = await self.service.get_symbols_for_file(filepath, contents)\n            \n            return {\n                \"ast_nodes\": self.service.count_nodes(ast),\n                \"max_depth\": self.service.get_max_depth(ast),\n                \"symbols_count\": len(symbols),\n                \"node_types\": self.service.get_node_types(ast)\n            }\n        except Exception as e:\n            return {\"error\": str(e)}"
+    },
+    {
+      "filepath": "example.py",
+      "type": "class_definition",
+      "name": "LSPAnalyzer",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 93
+        },
+        "end": {
+          "character": 37,
+          "line": 114
+        }
+      },
+      "content": "class LSPAnalyzer(BaseAnalyzer):\n    \"\"\"LSP 분석기\"\"\"\n    \n    def __init__(self):\n        super().__init__(\"LSPAnalyzer\")\n        self.service = LSPService()\n    \n    async def analyze(self, filepath: str) -> Dict[str, Any]:\n        \"\"\"LSP 분석 수행\"\"\"\n        try:\n            await self.service.initialize()\n            \n            # 문서 심볼 가져오기\n            symbols = await self.service.get_document_symbols(filepath)\n            \n            return {\n                \"document_symbols\": len(symbols),\n                \"symbols\": [{\"name\": s.name, \"kind\": s.kind} for s in symbols]\n            }\n        except Exception as e:\n            return {\"error\": str(e)}"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "__init__",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 96
+        },
+        "end": {
+          "character": 36,
+          "line": 99
+        }
+      },
+      "content": "def __init__(self):\n        super().__init__(\"LSPAnalyzer\")\n        self.service = LSPService()"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "analyze",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 100
+        },
+        "end": {
+          "character": 37,
+          "line": 114
+        }
+      },
+      "content": "async def analyze(self, filepath: str) -> Dict[str, Any]:\n        \"\"\"LSP 분석 수행\"\"\"\n        try:\n            await self.service.initialize()\n            \n            # 문서 심볼 가져오기\n            symbols = await self.service.get_document_symbols(filepath)\n            \n            return {\n                \"document_symbols\": len(symbols),\n                \"symbols\": [{\"name\": s.name, \"kind\": s.kind} for s in symbols]\n            }\n        except Exception as e:\n            return {\"error\": str(e)}"
+    },
+    {
+      "filepath": "example.py",
+      "type": "class_definition",
+      "name": "AnalysisType",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 116
+        },
+        "end": {
+          "character": 26,
+          "line": 121
+        }
+      },
+      "content": "class AnalysisType:\n    \"\"\"분석 타입\"\"\"\n    TREE_SITTER = \"tree_sitter\"\n    LSP = \"lsp\"\n    COMBINED = \"combined\""
+    },
+    {
+      "filepath": "example.py",
+      "type": "class_definition",
+      "name": "AnalysisError",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 123
+        },
+        "end": {
+          "character": 39,
+          "line": 129
+        }
+      },
+      "content": "class AnalysisError(Exception):\n    \"\"\"분석 오류\"\"\"\n    def __init__(self, message: str, code: int = 0):\n        self.message = message\n        self.code = code\n        super().__init__(self.message)"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "__init__",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 125
+        },
+        "end": {
+          "character": 39,
+          "line": 129
+        }
+      },
+      "content": "def __init__(self, message: str, code: int = 0):\n        self.message = message\n        self.code = code\n        super().__init__(self.message)"
+    },
+    {
+      "filepath": "example.py",
+      "type": "class_definition",
+      "name": "ContinueAnalyzer",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 131
+        },
+        "end": {
+          "character": 33,
+          "line": 219
+        }
+      },
+      "content": "class ContinueAnalyzer:\n    \"\"\"Continue 분석기 메인 클래스\"\"\"\n    \n    def __init__(self, config: Dict[str, Any] = None):\n        self.config = config or GLOBAL_CONFIG\n        self.tree_sitter_analyzer = TreeSitterAnalyzer()\n        self.lsp_analyzer = LSPAnalyzer()\n        self.core = None\n    \n    @timing_decorator\n    async def initialize(self):\n        \"\"\"분석기 초기화\"\"\"\n        try:\n            # Tree-sitter 초기화\n            await self.tree_sitter_analyzer.service.initialize()\n            \n            # LSP 초기화\n            await self.lsp_analyzer.service.initialize()\n            \n            # Core 초기화\n            core_config = CoreConfig(\n                workspace_paths=[str(current_dir)],\n                enable_tree_sitter=True,\n                enable_lsp=True,\n                enable_autocomplete=True,\n                enable_indexing=True\n            )\n            self.core = Core(core_config)\n            await self.core.initialize()\n            \n            print(\"Continue 분석기 초기화 완료\")\n            \n        except Exception as e:\n            raise AnalysisError(f\"초기화 실패: {e}\", 1001)\n    \n    async def analyze_file(self, filepath: str, analysis_type: str = AnalysisType.COMBINED) -> Dict[str, Any]:\n        \"\"\"파일 분석\"\"\"\n        try:\n            results = {\n                \"filepath\": filepath,\n                \"analysis_type\": analysis_type,\n                \"timestamp\": datetime.now().isoformat(),\n                \"config\": self.config\n            }\n            \n            if analysis_type in [AnalysisType.TREE_SITTER, AnalysisType.COMBINED]:\n                tree_sitter_result = await self.tree_sitter_analyzer.analyze(filepath)\n                results[\"tree_sitter\"] = tree_sitter_result\n            \n            if analysis_type in [AnalysisType.LSP, AnalysisType.COMBINED]:\n                lsp_result = await self.lsp_analyzer.analyze(filepath)\n                results[\"lsp\"] = lsp_result\n            \n            return results\n            \n        except Exception as e:\n            raise AnalysisError(f\"파일 분석 실패: {e}\", 1002)\n    \n    async def get_completions(self, filepath: str, position: Position) -> List[Dict[str, Any]]:\n        \"\"\"자동완성 제공\"\"\"\n        try:\n            if not self.core:\n                await self.initialize()\n            \n            return await self.core.get_completions(filepath, position)\n        except Exception as e:\n            print(f\"자동완성 실패: {e}\")\n            return []\n    \n    async def get_context(self, query: str, filepath: str) -> List[Dict[str, Any]]:\n        \"\"\"컨텍스트 제공\"\"\"\n        try:\n            if not self.core:\n                await self.initialize()\n            \n            return await self.core.get_context(query, filepath)\n        except Exception as e:\n            print(f\"컨텍스트 제공 실패: {e}\")\n            return []\n    \n    async def shutdown(self):\n        \"\"\"분석기 종료\"\"\"\n        try:\n            if self.core:\n                await self.core.shutdown()\n            print(\"분석기 종료 완료\")\n        except Exception as e:\n            print(f\"종료 실패: {e}\")"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "__init__",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 134
+        },
+        "end": {
+          "character": 25,
+          "line": 139
+        }
+      },
+      "content": "def __init__(self, config: Dict[str, Any] = None):\n        self.config = config or GLOBAL_CONFIG\n        self.tree_sitter_analyzer = TreeSitterAnalyzer()\n        self.lsp_analyzer = LSPAnalyzer()\n        self.core = None"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "initialize",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 141
+        },
+        "end": {
+          "character": 54,
+          "line": 165
+        }
+      },
+      "content": "async def initialize(self):\n        \"\"\"분석기 초기화\"\"\"\n        try:\n            # Tree-sitter 초기화\n            await self.tree_sitter_analyzer.service.initialize()\n            \n            # LSP 초기화\n            await self.lsp_analyzer.service.initialize()\n            \n            # Core 초기화\n            core_config = CoreConfig(\n                workspace_paths=[str(current_dir)],\n                enable_tree_sitter=True,\n                enable_lsp=True,\n                enable_autocomplete=True,\n                enable_indexing=True\n            )\n            self.core = Core(core_config)\n            await self.core.initialize()\n            \n            print(\"Continue 분석기 초기화 완료\")\n            \n        except Exception as e:\n            raise AnalysisError(f\"초기화 실패: {e}\", 1001)"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "analyze_file",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 166
+        },
+        "end": {
+          "character": 56,
+          "line": 188
+        }
+      },
+      "content": "async def analyze_file(self, filepath: str, analysis_type: str = AnalysisType.COMBINED) -> Dict[str, Any]:\n        \"\"\"파일 분석\"\"\"\n        try:\n            results = {\n                \"filepath\": filepath,\n                \"analysis_type\": analysis_type,\n                \"timestamp\": datetime.now().isoformat(),\n                \"config\": self.config\n            }\n            \n            if analysis_type in [AnalysisType.TREE_SITTER, AnalysisType.COMBINED]:\n                tree_sitter_result = await self.tree_sitter_analyzer.analyze(filepath)\n                results[\"tree_sitter\"] = tree_sitter_result\n            \n            if analysis_type in [AnalysisType.LSP, AnalysisType.COMBINED]:\n                lsp_result = await self.lsp_analyzer.analyze(filepath)\n                results[\"lsp\"] = lsp_result\n            \n            return results\n            \n        except Exception as e:\n            raise AnalysisError(f\"파일 분석 실패: {e}\", 1002)"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "get_completions",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 189
+        },
+        "end": {
+          "character": 22,
+          "line": 199
+        }
+      },
+      "content": "async def get_completions(self, filepath: str, position: Position) -> List[Dict[str, Any]]:\n        \"\"\"자동완성 제공\"\"\"\n        try:\n            if not self.core:\n                await self.initialize()\n            \n            return await self.core.get_completions(filepath, position)\n        except Exception as e:\n            print(f\"자동완성 실패: {e}\")\n            return []"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "get_context",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 200
+        },
+        "end": {
+          "character": 22,
+          "line": 210
+        }
+      },
+      "content": "async def get_context(self, query: str, filepath: str) -> List[Dict[str, Any]]:\n        \"\"\"컨텍스트 제공\"\"\"\n        try:\n            if not self.core:\n                await self.initialize()\n            \n            return await self.core.get_context(query, filepath)\n        except Exception as e:\n            print(f\"컨텍스트 제공 실패: {e}\")\n            return []"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "shutdown",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 211
+        },
+        "end": {
+          "character": 33,
+          "line": 219
+        }
+      },
+      "content": "async def shutdown(self):\n        \"\"\"분석기 종료\"\"\"\n        try:\n            if self.core:\n                await self.core.shutdown()\n            print(\"분석기 종료 완료\")\n        except Exception as e:\n            print(f\"종료 실패: {e}\")"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "calculate_complexity",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 221
+        },
+        "end": {
+          "character": 33,
+          "line": 224
+        }
+      },
+      "content": "def calculate_complexity(symbols: List[Dict[str, Any]]) -> int:\n    \"\"\"복잡도 계산\"\"\"\n    return len(symbols) * 2 + 10"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "format_analysis_result",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 225
+        },
+        "end": {
+          "character": 60,
+          "line": 228
+        }
+      },
+      "content": "def format_analysis_result(result: Dict[str, Any]) -> str:\n    \"\"\"분석 결과 포맷팅\"\"\"\n    return json.dumps(result, indent=2, ensure_ascii=False)"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "test_tree_sitter_analysis",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 230
+        },
+        "end": {
+          "character": 70,
+          "line": 247
+        }
+      },
+      "content": "async def test_tree_sitter_analysis():\n    \"\"\"Tree-sitter 분석 테스트\"\"\"\n    print(\"=== Tree-sitter 분석 테스트 ===\")\n    \n    try:\n        analyzer = ContinueAnalyzer()\n        await analyzer.initialize()\n        \n        # 현재 파일 분석\n        result = await analyzer.analyze_file(__file__, AnalysisType.TREE_SITTER)\n        print(f\"Tree-sitter 분석 결과: {format_analysis_result(result)}\")\n        \n        await analyzer.shutdown()\n        print(\"Tree-sitter 분석 테스트 완료\\n\")\n        \n    except AnalysisError as e:\n        print(f\"Tree-sitter 분석 테스트 실패: {e.message} (코드: {e.code})\\n\")"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "test_lsp_analysis",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 248
+        },
+        "end": {
+          "character": 62,
+          "line": 265
+        }
+      },
+      "content": "async def test_lsp_analysis():\n    \"\"\"LSP 분석 테스트\"\"\"\n    print(\"=== LSP 분석 테스트 ===\")\n    \n    try:\n        analyzer = ContinueAnalyzer()\n        await analyzer.initialize()\n        \n        # 현재 파일 분석\n        result = await analyzer.analyze_file(__file__, AnalysisType.LSP)\n        print(f\"LSP 분석 결과: {format_analysis_result(result)}\")\n        \n        await analyzer.shutdown()\n        print(\"LSP 분석 테스트 완료\\n\")\n        \n    except AnalysisError as e:\n        print(f\"LSP 분석 테스트 실패: {e.message} (코드: {e.code})\\n\")"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "test_combined_analysis",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 266
+        },
+        "end": {
+          "character": 61,
+          "line": 292
+        }
+      },
+      "content": "async def test_combined_analysis():\n    \"\"\"통합 분석 테스트\"\"\"\n    print(\"=== 통합 분석 테스트 ===\")\n    \n    try:\n        analyzer = ContinueAnalyzer()\n        await analyzer.initialize()\n        \n        # 현재 파일 분석\n        result = await analyzer.analyze_file(__file__, AnalysisType.COMBINED)\n        print(f\"통합 분석 결과: {format_analysis_result(result)}\")\n        \n        # 자동완성 테스트\n        position = Position(line=50, character=10)\n        completions = await analyzer.get_completions(__file__, position)\n        print(f\"자동완성 항목 수: {len(completions)}\")\n        \n        # 컨텍스트 테스트\n        context_items = await analyzer.get_context(\"function\", __file__)\n        print(f\"컨텍스트 항목 수: {len(context_items)}\")\n        \n        await analyzer.shutdown()\n        print(\"통합 분석 테스트 완료\\n\")\n        \n    except AnalysisError as e:\n        print(f\"통합 분석 테스트 실패: {e.message} (코드: {e.code})\\n\")"
+    },
+    {
+      "filepath": "example.py",
+      "type": "function_definition",
+      "name": "main",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 294
+        },
+        "end": {
+          "character": 24,
+          "line": 305
+        }
+      },
+      "content": "async def main():\n    \"\"\"메인 함수\"\"\"\n    print(\"Continue Python 포팅 테스트 시작\")\n    print(\"=\" * 50)\n    \n    # 각종 분석 테스트 실행\n    await test_tree_sitter_analysis()\n    await test_lsp_analysis()\n    await test_combined_analysis()\n    \n    print(\"모든 테스트 완료!\")"
+    }
+  ],
+  "analysis": {
+    "total_nodes": 2546,
+    "max_depth": 16,
+    "node_types": {
+      "module": 1,
+      "comment": 25,
+      "expression_statement": 105,
+      "string": 80,
+      "string_start": 80,
+      "string_content": 87,
+      "string_end": 80,
+      "import_statement": 6,
+      "import": 16,
+      "dotted_name": 32,
+      "identifier": 488,
+      "import_from_statement": 10,
+      "from": 10,
+      ",": 66,
+      "aliased_import": 1,
+      "as": 12,
+      "assignment": 38,
+      "=": 51,
+      "attribute": 93,
+      "call": 97,
+      "argument_list": 101,
+      "(": 124,
+      ")": 124,
+      ".": 95,
+      "integer": 10,
+      "dictionary": 7,
+      "{": 25,
+      "pair": 17,
+      ":": 88,
+      "true": 5,
+      "list": 7,
+      "[": 24,
+      "]": 24,
+      "}": 25,
+      "function_definition": 22,
+      "def": 22,
+      "parameters": 22,
+      "block": 55,
+      "list_splat_pattern": 1,
+      "*": 4,
+      "dictionary_splat_pattern": 1,
+      "**": 2,
+      "list_splat": 1,
+      "dictionary_splat": 1,
+      "interpolation": 18,
+      "parenthesized_expression": 1,
+      "binary_operator": 4,
+      "-": 1,
+      "format_specifier": 1,
+      "return_statement": 14,
+      "return": 14,
+      "class_definition": 6,
+      "class": 6,
+      "typed_parameter": 12,
+      "type": 48,
+      "decorated_definition": 2,
+      "decorator": 2,
+      "@": 2,
+      "async": 12,
+      "->": 9,
+      "generic_type": 14,
+      "type_parameter": 14,
+      "pass_statement": 1,
+      "pass": 1,
+      "try_statement": 10,
+      "try": 10,
+      "with_statement": 1,
+      "with": 1,
+      "with_clause": 1,
+      "with_item": 1,
+      "as_pattern": 11,
+      "keyword_argument": 10,
+      "as_pattern_target": 11,
+      "await": 56,
+      "except_clause": 10,
+      "except": 10,
+      "list_comprehension": 1,
+      "for_in_clause": 1,
+      "for": 1,
+      "in": 3,
+      "typed_default_parameter": 3,
+      "none": 2,
+      "boolean_operator": 1,
+      "or": 1,
+      "raise_statement": 2,
+      "raise": 2,
+      "if_statement": 6,
+      "if": 6,
+      "comparison_operator": 3,
+      "subscript": 2,
+      "not_operator": 2,
+      "not": 2,
+      "+": 1,
+      "false": 1,
+      "escape_sequence": 6,
+      "==": 1
+    }
+  }
+}

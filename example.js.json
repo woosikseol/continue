@@ -1,0 +1,603 @@
+{
+  "filepath": "example.js",
+  "language": "javascript",
+  "ast_root": {
+    "type": "program",
+    "text": "/**\n * Continue JavaScript 분석 테스트 예시\n * Tree-sitter와 LSP 분석을 위한 다양한 JavaScript 구문 요소 포함\n */\n\n// 상수\nc...",
+    "start_position": [
+      0,
+      0
+    ],
+    "end_position": [
+      303,
+      1
+    ],
+    "children_count": 39
+  },
+  "symbols": [
+    {
+      "filepath": "example.js",
+      "type": "class_declaration",
+      "name": "BaseAnalyzer",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 20
+        },
+        "end": {
+          "character": 2,
+          "line": 34
+        }
+      },
+      "content": "class BaseAnalyzer {\n    constructor(name) {\n        this.analyzerName = name;\n        this.results = [];\n    }\n    \n    async analyze(filepath) {\n        throw new Error(\"analyze 메서드를 구현해야 합니다\");\n    }\n    \n    getResults() {\n        return [...this.results];\n    }\n}"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "constructor",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 21
+        },
+        "end": {
+          "character": 6,
+          "line": 25
+        }
+      },
+      "content": "constructor(name) {\n        this.analyzerName = name;\n        this.results = [];\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "analyze",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 26
+        },
+        "end": {
+          "character": 6,
+          "line": 29
+        }
+      },
+      "content": "async analyze(filepath) {\n        throw new Error(\"analyze 메서드를 구현해야 합니다\");\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "getResults",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 30
+        },
+        "end": {
+          "character": 6,
+          "line": 33
+        }
+      },
+      "content": "getResults() {\n        return [...this.results];\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "class_declaration",
+      "name": "TreeSitterAnalyzer",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 35
+        },
+        "end": {
+          "character": 2,
+          "line": 60
+        }
+      },
+      "content": "class TreeSitterAnalyzer extends BaseAnalyzer {\n    constructor() {\n        super(\"TreeSitterAnalyzer\");\n        this.service = new TreeSitterService();\n    }\n    \n    async analyze(filepath) {\n        try {\n            const fs = require('fs').promises;\n            const content = await fs.readFile(filepath, 'utf8');\n            const ast = await this.service.parseAST(content);\n            const symbols = await this.service.extractSymbols(ast);\n            \n            return {\n                filepath,\n                nodeCount: ast.getNodeCount(),\n                maxDepth: ast.getMaxDepth(),\n                symbolCount: symbols.length,\n                nodeTypes: this.service.getNodeTypes(ast)\n            };\n        } catch (error) {\n            throw new AnalysisError(`파일 읽기 실패: ${error.message}`, 1001);\n        }\n    }\n}"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "constructor",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 36
+        },
+        "end": {
+          "character": 6,
+          "line": 40
+        }
+      },
+      "content": "constructor() {\n        super(\"TreeSitterAnalyzer\");\n        this.service = new TreeSitterService();\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "analyze",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 41
+        },
+        "end": {
+          "character": 6,
+          "line": 59
+        }
+      },
+      "content": "async analyze(filepath) {\n        try {\n            const fs = require('fs').promises;\n            const content = await fs.readFile(filepath, 'utf8');\n            const ast = await this.service.parseAST(content);\n            const symbols = await this.service.extractSymbols(ast);\n            \n            return {\n                filepath,\n                nodeCount: ast.getNodeCount(),\n                maxDepth: ast.getMaxDepth(),\n                symbolCount: symbols.length,\n                nodeTypes: this.service.getNodeTypes(ast)\n            };\n        } catch (error) {\n            throw new AnalysisError(`파일 읽기 실패: ${error.message}`, 1001);\n        }\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "class_declaration",
+      "name": "LSPAnalyzer",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 61
+        },
+        "end": {
+          "character": 2,
+          "line": 80
+        }
+      },
+      "content": "class LSPAnalyzer extends BaseAnalyzer {\n    constructor() {\n        super(\"LSPAnalyzer\");\n        this.service = new LSPService();\n    }\n    \n    async analyze(filepath) {\n        try {\n            const symbols = await this.service.getDocumentSymbols(filepath);\n            return {\n                filepath,\n                symbolCount: symbols.length,\n                symbols: symbols.map(s => s.name)\n            };\n        } catch (error) {\n            throw new AnalysisError(`LSP 분석 실패: ${error.message}`, 1002);\n        }\n    }\n}"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "constructor",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 62
+        },
+        "end": {
+          "character": 6,
+          "line": 66
+        }
+      },
+      "content": "constructor() {\n        super(\"LSPAnalyzer\");\n        this.service = new LSPService();\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "analyze",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 67
+        },
+        "end": {
+          "character": 6,
+          "line": 79
+        }
+      },
+      "content": "async analyze(filepath) {\n        try {\n            const symbols = await this.service.getDocumentSymbols(filepath);\n            return {\n                filepath,\n                symbolCount: symbols.length,\n                symbols: symbols.map(s => s.name)\n            };\n        } catch (error) {\n            throw new AnalysisError(`LSP 분석 실패: ${error.message}`, 1002);\n        }\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "class_declaration",
+      "name": "ContinueAnalyzer",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 81
+        },
+        "end": {
+          "character": 2,
+          "line": 141
+        }
+      },
+      "content": "class ContinueAnalyzer {\n    constructor(config = {}) {\n        this.config = { ...globalConfig, ...config };\n        this.treeSitterAnalyzer = new TreeSitterAnalyzer();\n        this.lspAnalyzer = new LSPAnalyzer();\n    }\n    \n    async initialize() {\n        try {\n            await this.treeSitterAnalyzer.service.initialize();\n            await this.lspAnalyzer.service.initialize();\n            console.log(\"Continue 분석기 초기화 완료\");\n        } catch (error) {\n            throw new AnalysisError(`초기화 실패: ${error.message}`, 1001);\n        }\n    }\n    \n    async analyzeFile(filepath, analysisType = 'COMBINED') {\n        try {\n            const results = {\n                filepath,\n                analysisType,\n                timestamp: new Date().toISOString(),\n                config: this.config\n            };\n            \n            if (analysisType === 'TREE_SITTER' || analysisType === 'COMBINED') {\n                const treeSitterResult = await this.treeSitterAnalyzer.analyze(filepath);\n                results.treeSitter = treeSitterResult;\n            }\n            \n            if (analysisType === 'LSP' || analysisType === 'COMBINED') {\n                const lspResult = await this.lspAnalyzer.analyze(filepath);\n                results.lsp = lspResult;\n            }\n            \n            return results;\n        } catch (error) {\n            throw new AnalysisError(`파일 분석 실패: ${error.message}`, 1002);\n        }\n    }\n    \n    async getCompletions(filepath, position) {\n        try {\n            return await this.lspAnalyzer.service.getCompletions(filepath, position);\n        } catch (error) {\n            console.error(`자동완성 실패: ${error.message}`);\n            return [];\n        }\n    }\n    \n    async getContext(query, filepath) {\n        try {\n            return await this.lspAnalyzer.service.getContext(query, filepath);\n        } catch (error) {\n            console.error(`컨텍스트 제공 실패: ${error.message}`);\n            return [];\n        }\n    }\n}"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "constructor",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 82
+        },
+        "end": {
+          "character": 6,
+          "line": 87
+        }
+      },
+      "content": "constructor(config = {}) {\n        this.config = { ...globalConfig, ...config };\n        this.treeSitterAnalyzer = new TreeSitterAnalyzer();\n        this.lspAnalyzer = new LSPAnalyzer();\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "initialize",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 88
+        },
+        "end": {
+          "character": 6,
+          "line": 97
+        }
+      },
+      "content": "async initialize() {\n        try {\n            await this.treeSitterAnalyzer.service.initialize();\n            await this.lspAnalyzer.service.initialize();\n            console.log(\"Continue 분석기 초기화 완료\");\n        } catch (error) {\n            throw new AnalysisError(`초기화 실패: ${error.message}`, 1001);\n        }\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "analyzeFile",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 98
+        },
+        "end": {
+          "character": 6,
+          "line": 122
+        }
+      },
+      "content": "async analyzeFile(filepath, analysisType = 'COMBINED') {\n        try {\n            const results = {\n                filepath,\n                analysisType,\n                timestamp: new Date().toISOString(),\n                config: this.config\n            };\n            \n            if (analysisType === 'TREE_SITTER' || analysisType === 'COMBINED') {\n                const treeSitterResult = await this.treeSitterAnalyzer.analyze(filepath);\n                results.treeSitter = treeSitterResult;\n            }\n            \n            if (analysisType === 'LSP' || analysisType === 'COMBINED') {\n                const lspResult = await this.lspAnalyzer.analyze(filepath);\n                results.lsp = lspResult;\n            }\n            \n            return results;\n        } catch (error) {\n            throw new AnalysisError(`파일 분석 실패: ${error.message}`, 1002);\n        }\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "getCompletions",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 123
+        },
+        "end": {
+          "character": 6,
+          "line": 131
+        }
+      },
+      "content": "async getCompletions(filepath, position) {\n        try {\n            return await this.lspAnalyzer.service.getCompletions(filepath, position);\n        } catch (error) {\n            console.error(`자동완성 실패: ${error.message}`);\n            return [];\n        }\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "getContext",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 132
+        },
+        "end": {
+          "character": 6,
+          "line": 140
+        }
+      },
+      "content": "async getContext(query, filepath) {\n        try {\n            return await this.lspAnalyzer.service.getContext(query, filepath);\n        } catch (error) {\n            console.error(`컨텍스트 제공 실패: ${error.message}`);\n            return [];\n        }\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "class_declaration",
+      "name": "AnalysisError",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 150
+        },
+        "end": {
+          "character": 2,
+          "line": 157
+        }
+      },
+      "content": "class AnalysisError extends Error {\n    constructor(message, code = 0) {\n        super(message);\n        this.name = 'AnalysisError';\n        this.code = code;\n    }\n}"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "constructor",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 151
+        },
+        "end": {
+          "character": 6,
+          "line": 156
+        }
+      },
+      "content": "constructor(message, code = 0) {\n        super(message);\n        this.name = 'AnalysisError';\n        this.code = code;\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "class_declaration",
+      "name": "AnalysisResult",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 159
+        },
+        "end": {
+          "character": 2,
+          "line": 176
+        }
+      },
+      "content": "class AnalysisResult {\n    constructor(filepath, nodeCount = 0, maxDepth = 0, symbolCount = 0, nodeTypes = {}) {\n        this.filepath = filepath;\n        this.nodeCount = nodeCount;\n        this.maxDepth = maxDepth;\n        this.symbolCount = symbolCount;\n        this.nodeTypes = nodeTypes;\n        this.symbols = [];\n    }\n    \n    getFilepath() { return this.filepath; }\n    getNodeCount() { return this.nodeCount; }\n    getMaxDepth() { return this.maxDepth; }\n    getSymbolCount() { return this.symbolCount; }\n    getNodeTypes() { return this.nodeTypes; }\n    getSymbols() { return this.symbols; }\n}"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "constructor",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 160
+        },
+        "end": {
+          "character": 6,
+          "line": 168
+        }
+      },
+      "content": "constructor(filepath, nodeCount = 0, maxDepth = 0, symbolCount = 0, nodeTypes = {}) {\n        this.filepath = filepath;\n        this.nodeCount = nodeCount;\n        this.maxDepth = maxDepth;\n        this.symbolCount = symbolCount;\n        this.nodeTypes = nodeTypes;\n        this.symbols = [];\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "getFilepath",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 169
+        },
+        "end": {
+          "character": 44,
+          "line": 170
+        }
+      },
+      "content": "getFilepath() { return this.filepath; }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "getNodeCount",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 170
+        },
+        "end": {
+          "character": 46,
+          "line": 171
+        }
+      },
+      "content": "getNodeCount() { return this.nodeCount; }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "getMaxDepth",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 171
+        },
+        "end": {
+          "character": 44,
+          "line": 172
+        }
+      },
+      "content": "getMaxDepth() { return this.maxDepth; }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "getSymbolCount",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 172
+        },
+        "end": {
+          "character": 50,
+          "line": 173
+        }
+      },
+      "content": "getSymbolCount() { return this.symbolCount; }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "getNodeTypes",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 173
+        },
+        "end": {
+          "character": 46,
+          "line": 174
+        }
+      },
+      "content": "getNodeTypes() { return this.nodeTypes; }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "getSymbols",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 174
+        },
+        "end": {
+          "character": 42,
+          "line": 175
+        }
+      },
+      "content": "getSymbols() { return this.symbols; }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "class_declaration",
+      "name": "ResultContainer",
+      "range": {
+        "start": {
+          "character": 0,
+          "line": 184
+        },
+        "end": {
+          "character": 2,
+          "line": 195
+        }
+      },
+      "content": "class ResultContainer {\n    constructor(data, success = true, errorMessage = null) {\n        this.data = data;\n        this.success = success;\n        this.errorMessage = errorMessage;\n    }\n    \n    getData() { return this.data; }\n    isSuccess() { return this.success; }\n    getErrorMessage() { return this.errorMessage; }\n}"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "constructor",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 185
+        },
+        "end": {
+          "character": 6,
+          "line": 190
+        }
+      },
+      "content": "constructor(data, success = true, errorMessage = null) {\n        this.data = data;\n        this.success = success;\n        this.errorMessage = errorMessage;\n    }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "getData",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 191
+        },
+        "end": {
+          "character": 36,
+          "line": 192
+        }
+      },
+      "content": "getData() { return this.data; }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "isSuccess",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 192
+        },
+        "end": {
+          "character": 41,
+          "line": 193
+        }
+      },
+      "content": "isSuccess() { return this.success; }"
+    },
+    {
+      "filepath": "example.js",
+      "type": "method_definition",
+      "name": "getErrorMessage",
+      "range": {
+        "start": {
+          "character": 4,
+          "line": 193
+        },
+        "end": {
+          "character": 52,
+          "line": 194
+        }
+      },
+      "content": "getErrorMessage() { return this.errorMessage; }"
+    }
+  ],
+  "analysis": {
+    "total_nodes": 2420,
+    "max_depth": 15,
+    "node_types": {
+      "program": 1,
+      "comment": 18,
+      "lexical_declaration": 26,
+      "const": 24,
+      "variable_declarator": 26,
+      "identifier": 222,
+      "=": 56,
+      "string": 34,
+      "\"": 42,
+      "string_fragment": 58,
+      ";": 107,
+      "number": 19,
+      "let": 2,
+      "object": 11,
+      "{": 73,
+      "pair": 18,
+      "property_identifier": 173,
+      ":": 18,
+      "true": 2,
+      ",": 55,
+      "array": 7,
+      "[": 7,
+      "]": 7,
+      "}": 94,
+      "class_declaration": 7,
+      "class": 7,
+      "class_body": 7,
+      "method_definition": 24,
+      "formal_parameters": 34,
+      "(": 129,
+      ")": 129,
+      "statement_block": 55,
+      "expression_statement": 55,
+      "assignment_expression": 21,
+      "member_expression": 131,
+      "this": 39,
+      ".": 131,
+      "async": 11,
+      "throw_statement": 7,
+      "throw": 7,
+      "new_expression": 15,
+      "new": 15,
+      "arguments": 82,
+      "return_statement": 19,
+      "return": 19,
+      "spread_element": 3,
+      "...": 3,
+      "class_heritage": 3,
+      "extends": 3,
+      "call_expression": 67,
+      "super": 3,
+      "try_statement": 9,
+      "try": 9,
+      "'": 26,
+      "await_expression": 21,
+      "await": 21,
+      "shorthand_property_identifier": 12,
+      "catch_clause": 9,
+      "catch": 9,
+      "template_string": 15,
+      "`": 30,
+      "template_substitution": 21,
+      "${": 21,
+      "arrow_function": 9,
+      "=>": 9,
+      "assignment_pattern": 9,
+      "if_statement": 4,
+      "if": 4,
+      "parenthesized_expression": 4,
+      "binary_expression": 13,
+      "===": 5,
+      "||": 2,
+      "null": 4,
+      "function_declaration": 6,
+      "function": 6,
+      "*": 1,
+      "+": 1,
+      "escape_sequence": 6,
+      "unary_expression": 2,
+      "typeof": 2,
+      "!==": 2,
+      "&&": 2
+    }
+  }
+}
