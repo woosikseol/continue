@@ -13,6 +13,11 @@
   - AST 노드 추출 및 메타데이터 수집
   - 트리 구조 구성 및 계층적 관계 설정
   - 구조적 메트릭 계산 (복잡도, 노드 수, 최대 깊이 등)
+- **🆕 의미적 단위 추출**: 요청하신 의미적 분석 기능
+  - 2.1 LSP 기반 심볼 추출 (문서 심볼, 심볼 분류, 가시성 분석)
+  - 2.2 의미적 타입 결정 (LSP 심볼 타입, 컨텍스트 분석, 언어별 특화)
+  - 2.3 AST 노드와 심볼 매핑 (위치 기반 매핑, 범위 분석, 정확도 검증)
+  - 2.4 의미적 관계 설정 (내보내기/가져오기, 상속 관계, 의존성 관계)
 
 ## AST 구문적 구조 분석
 
@@ -67,16 +72,16 @@ python install.py
 
 ## 사용법
 
-### 🆕 AST 분석 데모 실행
+### 🆕 AST 분석 및 의미적 단위 추출
 
 ```bash
-# AST 분석 기능 데모 실행
-python demo_ast_analysis.py
+# 의미적 분석 테스트
+python test_semantic_analysis.py
 
-# 단일 파일 AST 분석
+# 단일 파일 AST 분석 (의미적 단위 추출 포함)
 python analyze_file.py test_example.py result.json
 
-# 프로젝트 전체 AST 분석
+# 프로젝트 전체 AST 분석 (의미적 단위 추출 포함)
 python analyze_project.py /path/to/project project_analysis.json
 ```
 
@@ -131,9 +136,15 @@ python/
 ├── __init__.py                 # 메인 모듈
 ├── core.py                    # 핵심 Core 클래스
 ├── continue_types.py          # 타입 정의
-├── analyze_file.py            # 🆕 단일 파일 AST 분석
-├── analyze_project.py         # 🆕 프로젝트 전체 AST 분석
-├── demo_ast_analysis.py       # 🆕 AST 분석 기능 데모
+├── analyze_file.py            # 🆕 단일 파일 AST 분석 (의미적 단위 추출 포함)
+├── analyze_project.py         # 🆕 프로젝트 전체 AST 분석 (의미적 단위 추출 포함)
+├── test_semantic_analysis.py  # 🆕 의미적 분석 테스트 스크립트
+├── semantic/                  # 🆕 의미적 분석 모듈들
+│   ├── __init__.py
+│   ├── semantic_analyzer.py   # 의미적 타입 결정
+│   ├── ast_symbol_mapper.py   # AST-심볼 매핑
+│   ├── relationship_analyzer.py # 의미적 관계 분석
+│   └── semantic_unit_extractor.py # 통합 의미적 단위 추출기
 ├── AST_ANALYSIS_DOCUMENTATION.md # 🆕 AST 분석 기능 상세 문서
 ├── requirements.txt           # 의존성
 ├── README.md                  # 이 파일

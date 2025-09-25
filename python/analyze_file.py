@@ -33,6 +33,7 @@ from core import Core, CoreConfig
 from continue_types import *
 from util.tree_sitter_service import TreeSitterService
 from util.lsp_service import LSPService
+from semantic.semantic_unit_extractor import SemanticUnitExtractor
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -55,6 +56,7 @@ class AnalysisResult:
     ast_root: AstNode
     symbols: List[SymbolWithRange]
     analysis: Dict[str, Any]
+    semantic_analysis: Optional[Dict[str, Any]] = None
 
 class FileAnalyzer:
     """파일 분석기 클래스 - 원본 analyze-file.js의 Python 포팅"""
@@ -62,6 +64,7 @@ class FileAnalyzer:
     def __init__(self):
         self.tree_sitter_service = TreeSitterService()
         self.lsp_service = LSPService()
+        self.semantic_extractor = SemanticUnitExtractor()
         self.core = None
         
         logger.info("파일 분석기 초기화 완료")
@@ -85,6 +88,9 @@ class FileAnalyzer:
             )
             self.core = Core(config)
             await self.core.initialize()
+            
+            # 의미적 단위 추출기 초기화
+            await self.semantic_extractor.initialize()
             
             logger.info("분석기 초기화 완료")
             
@@ -138,6 +144,24 @@ class FileAnalyzer:
             ast_metadata = self.tree_sitter_service.extract_ast_metadata(ast, filepath) if ast else {}
             structural_metrics = self.tree_sitter_service.get_structural_metrics(ast) if ast else {}
             
+            # 의미적 단위 추출 (요청하신 모든 단계)
+            semantic_result = await self.semantic_extractor.extract_semantic_units(filepath)
+            semantic_analysis = {
+                'semantic_units': [
+                    {
+                        'name': unit.name,
+                        'type': unit.type,
+                        'confidence': unit.confidence,
+                        'relationships_count': len(unit.relationships),
+                        'has_ast_mapping': unit.ast_mapping is not None
+                    }
+                    for unit in semantic_result.semantic_units
+                ],
+                'total_units': semantic_result.total_units,
+                'analysis_metrics': semantic_result.analysis_metrics,
+                'processing_time': semantic_result.processing_time
+            }
+            
             # 분석 통계 (기존 + 새로운 메트릭)
             analysis = {
                 'total_nodes': self.tree_sitter_service.count_nodes(ast),
@@ -158,7 +182,8 @@ class FileAnalyzer:
                 language=language,
                 ast_root=ast_root,
                 symbols=symbols,
-                analysis=analysis
+                analysis=analysis,
+                semantic_analysis=semantic_analysis
             )
             
         except Exception as e:

@@ -69,11 +69,10 @@ class LSPService:
     
     async def _initialize_language_servers(self):
         """언어 서버들 초기화"""
-        # LSP 서버들을 임시로 비활성화하여 무한 대기 문제 해결
-        logger.info("LSP 서버들을 비활성화하여 빠른 시작")
+        logger.info("LSP 서버들을 활성화하여 의미적 분석 수행")
         
-        # Python LSP 서버 (비활성화)
-        # await self._start_python_lsp()
+        # Python LSP 서버
+        await self._start_python_lsp()
         
         # TypeScript/JavaScript LSP 서버 (비활성화)
         # await self._start_typescript_lsp()
@@ -81,7 +80,7 @@ class LSPService:
         # Java LSP 서버 (비활성화)
         # await self._start_java_lsp()
         
-        logger.info("언어 서버들 초기화 완료 (비활성화됨)")
+        logger.info("언어 서버들 초기화 완료 (Python LSP 활성화됨)")
     
     async def _start_python_lsp(self):
         """Python LSP 서버 시작"""
@@ -448,6 +447,143 @@ class LSPService:
         except Exception as e:
             logger.error(f"문서 심볼 제공 실패: {e}")
             return []
+    
+    async def get_semantic_symbols(self, filepath: str) -> List[Dict[str, Any]]:
+        """의미적 심볼 추출 - 요청하신 2.1 LSP 기반 심볼 추출 기능"""
+        try:
+            # 2.1.1 문서 심볼 추출
+            document_symbols = await self.get_document_symbols(filepath)
+            
+            # 2.1.2 심볼 분류 및 가시성 분석
+            semantic_symbols = []
+            for symbol in document_symbols:
+                # 심볼 분류
+                symbol_type = self._classify_symbol_type(symbol.kind)
+                
+                # 가시성 분석
+                visibility = self._analyze_visibility(symbol, filepath)
+                
+                # 의미적 정보 추가
+                semantic_info = {
+                    'name': symbol.name,
+                    'type': symbol_type,
+                    'kind': symbol.kind,
+                    'visibility': visibility,
+                    'range': {
+                        'start': {
+                            'line': symbol.range.start.line,
+                            'character': symbol.range.start.character
+                        },
+                        'end': {
+                            'line': symbol.range.end.line,
+                            'character': symbol.range.end.character
+                        }
+                    },
+                    'selection_range': {
+                        'start': {
+                            'line': symbol.selection_range.start.line,
+                            'character': symbol.selection_range.start.character
+                        },
+                        'end': {
+                            'line': symbol.selection_range.end.line,
+                            'character': symbol.selection_range.end.character
+                        }
+                    }
+                }
+                
+                semantic_symbols.append(semantic_info)
+            
+            return semantic_symbols
+            
+        except Exception as e:
+            logger.error(f"의미적 심볼 추출 실패: {e}")
+            return []
+    
+    def _classify_symbol_type(self, kind: int) -> str:
+        """심볼 타입 분류 - 2.1.2 심볼 분류"""
+        # LSP SymbolKind 매핑
+        kind_map = {
+            1: 'file',           # File
+            2: 'module',         # Module
+            3: 'namespace',      # Namespace
+            4: 'package',        # Package
+            5: 'class',          # Class
+            6: 'method',         # Method
+            7: 'property',       # Property
+            8: 'field',          # Field
+            9: 'constructor',    # Constructor
+            10: 'enum',          # Enum
+            11: 'interface',     # Interface
+            12: 'function',      # Function
+            13: 'variable',     # Variable
+            14: 'constant',      # Constant
+            15: 'string',        # String
+            16: 'number',        # Number
+            17: 'boolean',       # Boolean
+            18: 'array',         # Array
+            19: 'object',        # Object
+            20: 'key',           # Key
+            21: 'null',         # Null
+            22: 'enum_member',   # EnumMember
+            23: 'struct',        # Struct
+            24: 'event',        # Event
+            25: 'operator',      # Operator
+            26: 'type_parameter' # TypeParameter
+        }
+        
+        return kind_map.get(kind, 'unknown')
+    
+    def _analyze_visibility(self, symbol: DocumentSymbol, filepath: str) -> str:
+        """가시성 분석 - 2.1.3 가시성 분석"""
+        try:
+            # 파일 내용 읽기
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            lines = content.split('\n')
+            symbol_line = symbol.range.start.line
+            
+            if symbol_line < len(lines):
+                line_content = lines[symbol_line]
+                
+                # Python 가시성 분석
+                if filepath.endswith('.py'):
+                    if line_content.strip().startswith('def _'):
+                        return 'private'
+                    elif line_content.strip().startswith('def __'):
+                        return 'private'
+                    elif line_content.strip().startswith('class _'):
+                        return 'private'
+                    else:
+                        return 'public'
+                
+                # JavaScript/TypeScript 가시성 분석
+                elif filepath.endswith(('.js', '.ts', '.jsx', '.tsx')):
+                    if 'private' in line_content:
+                        return 'private'
+                    elif 'protected' in line_content:
+                        return 'protected'
+                    elif 'public' in line_content:
+                        return 'public'
+                    else:
+                        return 'public'  # 기본값
+                
+                # Java 가시성 분석
+                elif filepath.endswith('.java'):
+                    if 'private' in line_content:
+                        return 'private'
+                    elif 'protected' in line_content:
+                        return 'protected'
+                    elif 'public' in line_content:
+                        return 'public'
+                    else:
+                        return 'package'  # Java 기본 가시성
+            
+            return 'unknown'
+            
+        except Exception as e:
+            logger.error(f"가시성 분석 실패: {e}")
+            return 'unknown'
     
     async def shutdown(self):
         """LSP 서비스 종료"""

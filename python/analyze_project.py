@@ -40,6 +40,7 @@ class ProjectAnalysisResult:
     project_metrics: Dict[str, Any]
     language_distribution: Dict[str, int]
     structural_summary: Dict[str, Any]
+    semantic_summary: Optional[Dict[str, Any]] = None
 
 class ProjectAnalyzer:
     """프로젝트 전체 AST 분석기"""
@@ -137,6 +138,9 @@ class ProjectAnalyzer:
         language_distribution = self._calculate_language_distribution(analysis_results)
         structural_summary = self._calculate_structural_summary(analysis_results)
         
+        # 4. 의미적 분석 요약 계산
+        semantic_summary = self._calculate_semantic_summary(analysis_results)
+        
         analysis_time = time.time() - start_time
         
         logger.info(f"프로젝트 AST 분석 완료: {analysis_time:.2f}초")
@@ -150,7 +154,8 @@ class ProjectAnalyzer:
             analysis_results=analysis_results,
             project_metrics=project_metrics,
             language_distribution=language_distribution,
-            structural_summary=structural_summary
+            structural_summary=structural_summary,
+            semantic_summary=semantic_summary
         )
     
     def _calculate_project_metrics(self, results: List[AnalysisResult]) -> Dict[str, Any]:
@@ -248,6 +253,66 @@ class ProjectAnalyzer:
         
         return distribution
     
+    def _calculate_semantic_summary(self, results: List[AnalysisResult]) -> Dict[str, Any]:
+        """의미적 분석 요약 계산"""
+        try:
+            if not results:
+                return {}
+            
+            # 의미적 분석이 있는 결과들만 필터링
+            semantic_results = [r for r in results if r.semantic_analysis]
+            
+            if not semantic_results:
+                return {}
+            
+            # 전체 의미적 단위 수
+            total_semantic_units = sum(
+                r.semantic_analysis.get('total_units', 0) 
+                for r in semantic_results
+            )
+            
+            # 신뢰도 분포
+            all_confidence_distribution = {
+                'high': 0,
+                'medium': 0,
+                'low': 0
+            }
+            
+            # 타입 분포
+            all_type_distribution = {}
+            
+            for result in semantic_results:
+                semantic_analysis = result.semantic_analysis
+                
+                # 신뢰도 분포 누적
+                confidence_dist = semantic_analysis.get('analysis_metrics', {}).get('confidence_distribution', {})
+                for level, count in confidence_dist.items():
+                    all_confidence_distribution[level] += count
+                
+                # 타입 분포 누적
+                type_dist = semantic_analysis.get('analysis_metrics', {}).get('type_distribution', {})
+                for unit_type, count in type_dist.items():
+                    all_type_distribution[unit_type] = all_type_distribution.get(unit_type, 0) + count
+            
+            # 평균 처리 시간
+            avg_processing_time = sum(
+                r.semantic_analysis.get('processing_time', 0) 
+                for r in semantic_results
+            ) / len(semantic_results) if semantic_results else 0
+            
+            return {
+                'total_semantic_units': total_semantic_units,
+                'files_with_semantic_analysis': len(semantic_results),
+                'confidence_distribution': all_confidence_distribution,
+                'type_distribution': all_type_distribution,
+                'average_processing_time': avg_processing_time,
+                'semantic_analysis_coverage': len(semantic_results) / len(results) if results else 0
+            }
+            
+        except Exception as e:
+            logger.error(f"의미적 분석 요약 계산 실패: {e}")
+            return {}
+    
     async def shutdown(self):
         """분석기 종료"""
         await self.analyzer.shutdown()
@@ -301,6 +366,14 @@ async def main():
         print(f"언어 분포: {result.language_distribution}")
         print(f"총 AST 노드 수: {result.project_metrics.get('total_nodes', 0)}")
         print(f"최대 깊이: {result.project_metrics.get('max_depth', 0)}")
+        
+        # 의미적 분석 요약 출력
+        if result.semantic_summary:
+            print(f"\n=== 의미적 분석 요약 ===")
+            print(f"총 의미적 단위 수: {result.semantic_summary.get('total_semantic_units', 0)}")
+            print(f"의미적 분석 파일 수: {result.semantic_summary.get('files_with_semantic_analysis', 0)}")
+            print(f"의미적 분석 커버리지: {result.semantic_summary.get('semantic_analysis_coverage', 0):.2%}")
+            print(f"평균 처리 시간: {result.semantic_summary.get('average_processing_time', 0):.2f}초")
         
         # 분석기 종료
         await analyzer.shutdown()
