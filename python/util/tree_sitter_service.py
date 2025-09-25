@@ -82,6 +82,13 @@ class TreeSitterService:
             
             if existing_sources:
                 # 언어 라이브러리 빌드
+                # 내부적으로 다음과 같은 컴파일이 수행됨
+                # gcc -shared -fPIC -o my-languages.so \
+                #     vendor/tree-sitter-python/src/parser.c \
+                #     vendor/tree-sitter-python/src/scanner.cc \
+                #     vendor/tree-sitter-javascript/src/parser.c \
+                #     vendor/tree-sitter-javascript/src/scanner.c \
+                # ... 다른 언어들
                 tree_sitter.Language.build_library(
                     str(build_dir / 'my-languages.so'),
                     existing_sources
