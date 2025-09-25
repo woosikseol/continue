@@ -8,7 +8,11 @@
 - **Tree-sitter 사용**: 원본과 동일한 Tree-sitter (C++ 기반, WebAssembly) 파서 직접 사용
 - **LSP 지원**: Language Server Protocol을 통한 정확한 의미론적 분석
 - **다중 언어 지원**: Java, JavaScript, TypeScript, Python, C++, Go, Rust 등
-- **AST 분석**: 코드의 구문적 구조를 트리 형태로 표현하여 정확한 분석
+- **🆕 고급 AST 분석**: 요청하신 모든 단계를 포함한 구조적 메트릭 계산
+  - AST 파싱 단계 (Tree-sitter 파싱)
+  - AST 노드 추출 및 메타데이터 수집
+  - 트리 구조 구성 및 계층적 관계 설정
+  - 구조적 메트릭 계산 (복잡도, 노드 수, 최대 깊이 등)
 
 ## AST 구문적 구조 분석
 
@@ -63,6 +67,19 @@ python install.py
 
 ## 사용법
 
+### 🆕 AST 분석 데모 실행
+
+```bash
+# AST 분석 기능 데모 실행
+python demo_ast_analysis.py
+
+# 단일 파일 AST 분석
+python analyze_file.py test_example.py result.json
+
+# 프로젝트 전체 AST 분석
+python analyze_project.py /path/to/project project_analysis.json
+```
+
 ### 기본 파일 분석
 
 ```bash
@@ -113,8 +130,11 @@ asyncio.run(main())
 python/
 ├── __init__.py                 # 메인 모듈
 ├── core.py                    # 핵심 Core 클래스
-├── types.py                   # 타입 정의
-├── analyze_file.py            # 메인 분석 스크립트
+├── continue_types.py          # 타입 정의
+├── analyze_file.py            # 🆕 단일 파일 AST 분석
+├── analyze_project.py         # 🆕 프로젝트 전체 AST 분석
+├── demo_ast_analysis.py       # 🆕 AST 분석 기능 데모
+├── AST_ANALYSIS_DOCUMENTATION.md # 🆕 AST 분석 기능 상세 문서
 ├── requirements.txt           # 의존성
 ├── README.md                  # 이 파일
 ├── autocomplete/              # 자동완성 시스템
