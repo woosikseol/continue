@@ -227,7 +227,7 @@ class TreeSitterService:
             },
             'node_extraction': self._extract_all_nodes(node, filepath),
             'tree_structure': self._build_tree_structure(node),
-            'structural_metrics': self.get_structural_metrics(node)
+            'structural_metrics': self.calculate_structural_metrics(node)
         }
         
         return metadata
@@ -767,3 +767,156 @@ class TreeSitterService:
         """파일의 전체 언어 이름 반환 - 원본 getFullLanguageName 함수 포팅"""
         ext = Path(filepath).suffix.lstrip('.').lower()
         return SUPPORTED_LANGUAGES.get(ext)
+    
+    def calculate_structural_metrics(self, node: Node) -> Dict[str, Any]:
+        """1.4 구조적 메트릭 계산 - 요청하신 단계 완전 구현"""
+        if not node:
+            return {}
+        
+        metrics = {
+            'total_nodes': 0,
+            'max_depth': 0,
+            'complexity_score': 0.0,
+            'node_type_distribution': {},
+            'average_children_per_node': 0.0,
+            'leaf_nodes': 0,
+            'branch_nodes': 0,
+            'cyclomatic_complexity': 0,
+            'nesting_depth_distribution': {},
+            'structural_patterns': {},
+            'code_quality_metrics': {}
+        }
+        
+        def calculate_metrics(current_node, depth=0):
+            if not current_node:
+                return
+            
+            metrics['total_nodes'] += 1
+            metrics['max_depth'] = max(metrics['max_depth'], depth)
+            
+            # 노드 타입별 분포
+            node_type = current_node.type
+            metrics['node_type_distribution'][node_type] = metrics['node_type_distribution'].get(node_type, 0) + 1
+            
+            # 깊이별 분포
+            depth_key = f'depth_{depth}'
+            metrics['nesting_depth_distribution'][depth_key] = metrics['nesting_depth_distribution'].get(depth_key, 0) + 1
+            
+            # 리프 노드와 브랜치 노드 구분
+            if len(current_node.children) == 0:
+                metrics['leaf_nodes'] += 1
+            else:
+                metrics['branch_nodes'] += 1
+            
+            # 순환 복잡도 계산 (제어 구조 기반)
+            if node_type in ['if_statement', 'while_statement', 'for_statement', 'try_statement', 'switch_statement', 'conditional_expression']:
+                metrics['cyclomatic_complexity'] += 1
+            elif node_type in ['case_statement', 'except_clause', 'elif_clause']:
+                metrics['cyclomatic_complexity'] += 1
+            
+            # 구조적 복잡도 계산 (분기 노드 기반)
+            if len(current_node.children) > 1:
+                metrics['complexity_score'] += len(current_node.children) * 0.5
+                
+                # 깊은 중첩 패널티
+                if depth > 3:
+                    metrics['complexity_score'] += (depth - 3) * 0.3
+            
+            # 구조적 패턴 분석
+            self._analyze_structural_patterns(current_node, metrics, depth)
+            
+            # 자식 노드들 재귀 처리
+            for child in current_node.children:
+                calculate_metrics(child, depth + 1)
+        
+        calculate_metrics(node)
+        
+        # 평균 자식 노드 수 계산
+        if metrics['branch_nodes'] > 0:
+            total_children = metrics['total_nodes'] - 1  # 루트 제외
+            metrics['average_children_per_node'] = total_children / metrics['branch_nodes']
+        
+        # 코드 품질 메트릭 계산
+        metrics['code_quality_metrics'] = self._calculate_code_quality_metrics(metrics)
+        
+        return metrics
+    
+    def _analyze_structural_patterns(self, node: Node, metrics: Dict[str, Any], depth: int):
+        """구조적 패턴 분석"""
+        if 'structural_patterns' not in metrics:
+            metrics['structural_patterns'] = {}
+        
+        patterns = metrics['structural_patterns']
+        node_type = node.type
+        
+        # 함수/메서드 패턴
+        if node_type in ['function_definition', 'method_definition', 'function_declaration']:
+            patterns['functions'] = patterns.get('functions', 0) + 1
+            
+            # 함수 복잡도 (매개변수 수, 중첩 깊이)
+            param_count = len([child for child in node.children if child.type in ['parameters', 'parameter_list']])
+            if param_count > 5:
+                patterns['complex_functions'] = patterns.get('complex_functions', 0) + 1
+        
+        # 클래스 패턴
+        elif node_type in ['class_definition', 'class_declaration']:
+            patterns['classes'] = patterns.get('classes', 0) + 1
+            
+            # 메서드 수 계산
+            method_count = len([child for child in node.children if child.type in ['function_definition', 'method_definition']])
+            if method_count > 10:
+                patterns['large_classes'] = patterns.get('large_classes', 0) + 1
+        
+        # 깊은 중첩 패턴
+        if depth > 5:
+            patterns['deep_nesting'] = patterns.get('deep_nesting', 0) + 1
+        
+        # 반복문 패턴
+        if node_type in ['for_statement', 'while_statement']:
+            patterns['loops'] = patterns.get('loops', 0) + 1
+            
+            # 중첩 반복문
+            if depth > 2:
+                patterns['nested_loops'] = patterns.get('nested_loops', 0) + 1
+        
+        # 조건문 패턴
+        if node_type in ['if_statement', 'conditional_expression']:
+            patterns['conditionals'] = patterns.get('conditionals', 0) + 1
+            
+            # 복잡한 조건문 (else if 체인)
+            elif_count = len([child for child in node.children if child.type == 'elif_clause'])
+            if elif_count > 3:
+                patterns['complex_conditionals'] = patterns.get('complex_conditionals', 0) + 1
+    
+    def _calculate_code_quality_metrics(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """코드 품질 메트릭 계산"""
+        quality_metrics = {}
+        
+        # 복잡도 점수 (0-100)
+        complexity_score = min(100, max(0, 100 - (metrics['complexity_score'] * 2)))
+        quality_metrics['complexity_score'] = round(complexity_score, 2)
+        
+        # 유지보수성 점수
+        maintainability = 100
+        if metrics['max_depth'] > 6:
+            maintainability -= (metrics['max_depth'] - 6) * 5
+        if metrics['cyclomatic_complexity'] > 10:
+            maintainability -= (metrics['cyclomatic_complexity'] - 10) * 3
+        
+        quality_metrics['maintainability_score'] = round(max(0, maintainability), 2)
+        
+        # 구조적 균형 점수
+        if metrics['total_nodes'] > 0:
+            leaf_ratio = metrics['leaf_nodes'] / metrics['total_nodes']
+            balance_score = 100 - abs(0.5 - leaf_ratio) * 200  # 50% 리프 노드가 이상적
+            quality_metrics['structural_balance'] = round(max(0, balance_score), 2)
+        
+        # 전체 품질 점수
+        overall_score = (
+            quality_metrics['complexity_score'] * 0.4 +
+            quality_metrics['maintainability_score'] * 0.4 +
+            quality_metrics.get('structural_balance', 50) * 0.2
+        )
+        quality_metrics['overall_quality'] = round(overall_score, 2)
+        
+        return quality_metrics

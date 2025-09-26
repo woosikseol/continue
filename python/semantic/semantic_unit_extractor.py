@@ -191,23 +191,51 @@ class SemanticUnitExtractor:
         ast_mapping: Optional[MappingResult], 
         relationships: List[Relationship]
     ) -> float:
-        """단위 신뢰도 계산"""
+        """개선된 단위 신뢰도 계산"""
         confidence = 0.0
         
-        # 의미적 타입 신뢰도
+        # 1. 의미적 타입 신뢰도 (35% 가중치)
         if semantic_type:
-            confidence += semantic_type.confidence * 0.4
+            confidence += semantic_type.confidence * 0.35
+        else:
+            # 타입이 없으면 기본 페널티
+            confidence += 0.1
         
-        # AST 매핑 신뢰도
+        # 2. AST 매핑 신뢰도 (40% 가중치) - 가장 중요
         if ast_mapping:
-            confidence += ast_mapping.mapping_confidence * 0.3
+            mapping_score = ast_mapping.mapping_confidence
+            
+            # 매핑 품질 보너스
+            if ast_mapping.position_match and ast_mapping.range_match:
+                mapping_score = min(mapping_score * 1.2, 1.0)  # 20% 보너스
+            elif ast_mapping.position_match or ast_mapping.range_match:
+                mapping_score = min(mapping_score * 1.1, 1.0)  # 10% 보너스
+                
+            confidence += mapping_score * 0.4
+        else:
+            # 매핑이 없으면 큰 페널티
+            confidence += 0.05
         
-        # 관계 신뢰도
+        # 3. 관계 신뢰도 (25% 가중치)
         if relationships:
+            # 관계의 수와 품질 모두 고려
+            relationship_count_score = min(len(relationships) / 5.0, 1.0)  # 5개 관계가 최적
             avg_relationship_strength = sum(r.strength for r in relationships) / len(relationships)
-            confidence += avg_relationship_strength * 0.3
+            
+            # 관계 점수 = 수량 점수 * 0.3 + 품질 점수 * 0.7
+            relationship_score = relationship_count_score * 0.3 + avg_relationship_strength * 0.7
+            confidence += relationship_score * 0.25
         
-        return min(confidence, 1.0)
+        # 최종 신뢰도 정규화 및 품질 등급 적용
+        final_confidence = min(confidence, 1.0)
+        
+        # 품질 등급별 조정
+        if final_confidence >= 0.9:
+            final_confidence = min(final_confidence * 1.05, 1.0)  # 최고 품질 보너스
+        elif final_confidence < 0.3:
+            final_confidence *= 0.8  # 저품질 페널티
+        
+        return round(final_confidence, 3)
     
     async def _calculate_analysis_metrics(
         self, 
@@ -248,6 +276,9 @@ class SemanticUnitExtractor:
             # 관계 통계
             relationship_stats = await self.relationship_analyzer.get_relationship_statistics(filepath)
             
+            # 품질 지표 계산
+            quality_metrics = self._calculate_quality_metrics(semantic_units, mappings, relationships)
+            
             return {
                 'total_units': total_units,
                 'total_mappings': total_mappings,
@@ -257,12 +288,78 @@ class SemanticUnitExtractor:
                 'relationship_type_distribution': relationship_type_distribution,
                 'mapping_accuracy': mapping_accuracy,
                 'relationship_stats': relationship_stats,
-                'average_confidence': sum(u.confidence for u in semantic_units) / total_units if total_units > 0 else 0
+                'average_confidence': sum(u.confidence for u in semantic_units) / total_units if total_units > 0 else 0,
+                'quality_metrics': quality_metrics  # 새로운 품질 지표 추가
             }
             
         except Exception as e:
             logger.error(f"분석 메트릭 계산 실패: {e}")
             return {}
+    
+    def _calculate_quality_metrics(
+        self, 
+        semantic_units: List[SemanticUnit], 
+        mappings: List[MappingResult], 
+        relationships: List[Relationship]
+    ) -> Dict[str, Any]:
+        """품질 지표 계산"""
+        try:
+            total_units = len(semantic_units)
+            if total_units == 0:
+                return {}
+            
+            # 1. 신뢰도 품질 지표
+            confidences = [u.confidence for u in semantic_units]
+            confidence_quality = {
+                'average': sum(confidences) / len(confidences),
+                'median': sorted(confidences)[len(confidences) // 2],
+                'std_dev': self._calculate_std_dev(confidences),
+                'high_confidence_ratio': len([c for c in confidences if c >= 0.8]) / total_units
+            }
+            
+            # 2. 매핑 품질 지표
+            mapping_quality = {
+                'mapping_ratio': len(mappings) / total_units if total_units > 0 else 0,
+                'high_quality_mappings': len([m for m in mappings if m.mapping_confidence >= 0.8]),
+                'position_match_ratio': len([m for m in mappings if m.position_match]) / len(mappings) if mappings else 0,
+                'range_match_ratio': len([m for m in mappings if m.range_match]) / len(mappings) if mappings else 0
+            }
+            
+            # 3. 관계 품질 지표
+            relationship_quality = {
+                'relationship_density': len(relationships) / total_units if total_units > 0 else 0,
+                'average_strength': sum(r.strength for r in relationships) / len(relationships) if relationships else 0,
+                'strong_relationships': len([r for r in relationships if r.strength >= 0.8]),
+                'relationship_diversity': len(set(r.relationship_type for r in relationships))
+            }
+            
+            # 4. 종합 품질 점수
+            overall_quality = (
+                confidence_quality['average'] * 0.4 +
+                mapping_quality['mapping_ratio'] * 0.3 +
+                relationship_quality['relationship_density'] * 0.2 +
+                confidence_quality['high_confidence_ratio'] * 0.1
+            ) * 100  # 0-100 스케일로 변환
+            
+            return {
+                'confidence_quality': confidence_quality,
+                'mapping_quality': mapping_quality,
+                'relationship_quality': relationship_quality,
+                'overall_quality_score': round(overall_quality, 2)
+            }
+            
+        except Exception as e:
+            logger.error(f"품질 지표 계산 실패: {e}")
+            return {}
+    
+    def _calculate_std_dev(self, values: List[float]) -> float:
+        """표준편차 계산"""
+        if not values:
+            return 0.0
+        
+        mean = sum(values) / len(values)
+        variance = sum((x - mean) ** 2 for x in values) / len(values)
+        return round(variance ** 0.5, 3)
     
     async def analyze_multiple_files(self, filepaths: List[str]) -> Dict[str, SemanticAnalysisResult]:
         """여러 파일에 대한 의미적 단위 추출"""

@@ -92,49 +92,83 @@ class RelationshipAnalyzer:
             # 익스포트 문 분석
             exports = self._extract_exports(content)
             
+            # 임포트 관계 직접 분석 (심볼 매칭 없이)
+            for import_info in imports:
+                try:
+                    module_name = str(import_info.get('module', 'unknown_module'))
+                    relationship = Relationship(
+                        source=module_name,
+                        target=f"imported_from_{module_name}",
+                        relationship_type='import',
+                        strength=0.0,  # 나중에 계산
+                        context={
+                            'import_type': str(import_info.get('type', 'unknown')),
+                            'import_line': import_info.get('line', 0)
+                        },
+                        metadata={
+                            'file': str(filepath),
+                            'import_statement': str(import_info.get('statement', ''))
+                        }
+                    )
+                    relationships.append(relationship)
+                except Exception as e:
+                    logger.warning(f"임포트 관계 생성 실패: {e}")
+                    continue
+            
             # 심볼과 임포트/익스포트 매칭
             for symbol in symbols:
-                symbol_name = symbol['name']
-                
-                # 임포트 관계 분석
-                for import_info in imports:
-                    if self._is_symbol_imported(symbol_name, import_info):
-                        relationship = Relationship(
-                            source=import_info['module'],
-                            target=symbol_name,
-                            relationship_type='import',
-                            strength=0.0,  # 나중에 계산
-                            context={
-                                'import_type': import_info['type'],
-                                'import_line': import_info['line'],
-                                'symbol_range': symbol['range']
-                            },
-                            metadata={
-                                'file': filepath,
-                                'import_statement': import_info['statement']
-                            }
-                        )
-                        relationships.append(relationship)
+                try:
+                    symbol_name = symbol.get('name', 'unknown_symbol')
+                    
+                    # 임포트 관계 분석
+                    for import_info in imports:
+                        if self._is_symbol_imported(symbol_name, import_info):
+                            try:
+                                relationship = Relationship(
+                                    source=str(import_info.get('module', 'unknown_module')),
+                                    target=symbol_name,
+                                    relationship_type='import',
+                                    strength=0.0,  # 나중에 계산
+                                    context={
+                                        'import_type': str(import_info.get('type', 'unknown')),
+                                        'import_line': import_info.get('line', 0),
+                                        'symbol_range': symbol.get('range', {})
+                                    },
+                                    metadata={
+                                        'file': str(filepath),
+                                        'import_statement': str(import_info.get('statement', ''))
+                                    }
+                                )
+                                relationships.append(relationship)
+                            except Exception as e:
+                                logger.warning(f"심볼-임포트 관계 생성 실패: {e}")
+                                continue
+                except Exception as e:
+                    logger.warning(f"심볼-임포트 관계 생성 실패: {e}")
                 
                 # 익스포트 관계 분석
                 for export_info in exports:
                     if self._is_symbol_exported(symbol_name, export_info):
-                        relationship = Relationship(
-                            source=symbol_name,
-                            target=export_info['module'],
-                            relationship_type='export',
-                            strength=0.0,  # 나중에 계산
-                            context={
-                                'export_type': export_info['type'],
-                                'export_line': export_info['line'],
-                                'symbol_range': symbol['range']
-                            },
-                            metadata={
-                                'file': filepath,
-                                'export_statement': export_info['statement']
-                            }
-                        )
-                        relationships.append(relationship)
+                        try:
+                            relationship = Relationship(
+                                source=symbol_name,
+                                target=str(export_info.get('module', 'unknown_module')),
+                                relationship_type='export',
+                                strength=0.0,  # 나중에 계산
+                                context={
+                                    'export_type': str(export_info.get('type', 'unknown')),
+                                    'export_line': export_info.get('line', 0),
+                                    'symbol_range': symbol.get('range', {})
+                                },
+                                metadata={
+                                    'file': str(filepath),
+                                    'export_statement': str(export_info.get('statement', ''))
+                                }
+                            )
+                            relationships.append(relationship)
+                        except Exception as e:
+                            logger.warning(f"심볼-익스포트 관계 생성 실패: {e}")
+                            continue
             
             return relationships
             
@@ -242,15 +276,24 @@ class RelationshipAnalyzer:
     
     def _is_symbol_imported(self, symbol_name: str, import_info: Dict[str, Any]) -> bool:
         """심볼이 임포트되었는지 확인"""
-        if import_info['type'] == 'from_import':
-            return symbol_name in import_info.get('imports', [])
-        elif import_info['type'] in ['direct_import', 'es6_import', 'java_import']:
-            return symbol_name == import_info['module']
-        return False
+        try:
+            import_type = import_info.get('type', '')
+            if import_type == 'from_import':
+                return symbol_name in import_info.get('imports', [])
+            elif import_type in ['direct_import', 'es6_import', 'java_import']:
+                return symbol_name == str(import_info.get('module', ''))
+            return False
+        except Exception as e:
+            logger.warning(f"심볼 임포트 확인 실패: {e}")
+            return False
     
     def _is_symbol_exported(self, symbol_name: str, export_info: Dict[str, Any]) -> bool:
         """심볼이 익스포트되었는지 확인"""
-        return symbol_name == export_info.get('symbol', '')
+        try:
+            return symbol_name == str(export_info.get('symbol', ''))
+        except Exception as e:
+            logger.warning(f"심볼 익스포트 확인 실패: {e}")
+            return False
     
     async def _analyze_inheritance_relationships(self, symbols: List[Dict[str, Any]], filepath: str) -> List[Relationship]:
         """상속 관계 분석 - 2.4.2 상속 관계 설정"""
@@ -306,23 +349,51 @@ class RelationshipAnalyzer:
             
             # 상속 관계 생성
             for class_def in class_definitions:
-                for parent in class_def['parents']:
-                    if parent:  # None이 아닌 경우만
-                        relationship = Relationship(
-                            source=class_def['name'],
-                            target=parent,
-                            relationship_type='inheritance',
-                            strength=0.0,  # 나중에 계산
-                            context={
-                                'inheritance_type': 'class_inheritance',
-                                'class_line': class_def['line']
-                            },
-                            metadata={
-                                'file': filepath,
-                                'class_definition': class_def
-                            }
-                        )
-                        relationships.append(relationship)
+                try:
+                    for parent in class_def['parents']:
+                        if parent and parent.strip():  # None이 아니고 빈 문자열이 아닌 경우만
+                            parent = parent.strip()
+                            relationship = Relationship(
+                                source=class_def['name'],
+                                target=parent,
+                                relationship_type='inheritance',
+                                strength=0.0,  # 나중에 계산
+                                context={
+                                    'inheritance_type': 'class_inheritance',
+                                    'class_line': class_def['line']
+                                },
+                                metadata={
+                                    'file': filepath,
+                                    'class_definition': class_def
+                                }
+                            )
+                            relationships.append(relationship)
+                            logger.info(f"상속 관계 발견: {class_def['name']} -> {parent}")
+                except Exception as e:
+                    logger.warning(f"상속 관계 생성 실패: {e}")
+            
+            # 인터페이스 구현 관계도 추가
+            interface_implementations = self._extract_interface_implementations(content)
+            for impl in interface_implementations:
+                try:
+                    relationship = Relationship(
+                        source=impl['class'],
+                        target=impl['interface'],
+                        relationship_type='interface_implementation',
+                        strength=0.0,  # 나중에 계산
+                        context={
+                            'implementation_type': 'interface_implementation',
+                            'implementation_line': impl['line']
+                        },
+                        metadata={
+                            'file': filepath,
+                            'implementation_info': impl
+                        }
+                    )
+                    relationships.append(relationship)
+                    logger.info(f"인터페이스 구현 관계 발견: {impl['class']} implements {impl['interface']}")
+                except Exception as e:
+                    logger.warning(f"인터페이스 구현 관계 생성 실패: {e}")
             
             return relationships
             
@@ -490,6 +561,56 @@ class RelationshipAnalyzer:
                     return f'function_{match.group(1)}'
         
         return 'module'  # 모듈 레벨 사용
+    
+    def _extract_interface_implementations(self, content: str) -> List[Dict[str, Any]]:
+        """인터페이스 구현 관계 추출"""
+        implementations = []
+        lines = content.split('\n')
+        
+        for i, line in enumerate(lines):
+            line = line.strip()
+            
+            # Java 인터페이스 구현
+            if 'implements' in line:
+                match = re.match(r'class\s+(\w+).*implements\s+([^{]+)', line)
+                if match:
+                    class_name = match.group(1)
+                    interfaces = [iface.strip() for iface in match.group(2).split(',')]
+                    for interface in interfaces:
+                        implementations.append({
+                            'class': class_name,
+                            'interface': interface,
+                            'line': i,
+                            'language': 'java'
+                        })
+            
+            # TypeScript 인터페이스 구현
+            elif 'class ' in line and 'implements' in line:
+                match = re.match(r'class\s+(\w+).*implements\s+([^{]+)', line)
+                if match:
+                    class_name = match.group(1)
+                    interfaces = [iface.strip() for iface in match.group(2).split(',')]
+                    for interface in interfaces:
+                        implementations.append({
+                            'class': class_name,
+                            'interface': interface,
+                            'line': i,
+                            'language': 'typescript'
+                        })
+            
+            # Python ABC (Abstract Base Class) 상속
+            elif 'ABC' in line and 'class ' in line:
+                match = re.match(r'class\s+(\w+)\s*\([^)]*ABC[^)]*\)', line)
+                if match:
+                    class_name = match.group(1)
+                    implementations.append({
+                        'class': class_name,
+                        'interface': 'ABC',
+                        'line': i,
+                        'language': 'python'
+                    })
+        
+        return implementations
     
     def _calculate_relationship_strength(self, relationship: Relationship) -> float:
         """관계 강도 계산"""
