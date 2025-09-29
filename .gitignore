@@ -11,6 +11,9 @@ __pycache__/
 # core/util/tree-sitter-wasms
 # python/vendor/
 
+python/result.json
+
+
 # Distribution / packaging
 # .Python
 build/
