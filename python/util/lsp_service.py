@@ -80,27 +80,64 @@ class LSPService:
         # Python LSP 서버
         await self._start_python_lsp()
         
-        # TypeScript/JavaScript LSP 서버 (비활성화)
-        # await self._start_typescript_lsp()
+        # TypeScript/JavaScript LSP 서버
+        await self._start_typescript_lsp()
         
-        # Java LSP 서버 (비활성화)
-        # await self._start_java_lsp()
+        # Java LSP 서버
+        await self._start_java_lsp()
         
         logger.info("언어 서버들 초기화 완료")
     
     async def _start_python_lsp(self):
         """Python LSP 서버 시작 - 개선된 버전"""
         try:
-            # pylsp 시작 (올바른 옵션)
-            pylsp_path = '/Users/woosik/repository/continue/python/.venv/bin/pylsp'
-            # pylsp는 기본적으로 stdio를 사용하므로 --stdio 옵션 불필요
-            process = await asyncio.create_subprocess_exec(
-                pylsp_path,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=os.getcwd()  # 작업 디렉토리 설정
-            )
+            # Python LSP 서버 경로들 확인
+            pylsp_paths = [
+                # 현재 프로젝트 venv
+                '/Users/woosik/repository/continue/python/.venv/bin/pylsp',
+                # 시스템 전역 설치
+                'pylsp',
+                '/usr/local/bin/pylsp',
+                '/opt/homebrew/bin/pylsp',
+                # pip 사용자 설치
+                str(Path.home() / '.local' / 'bin' / 'pylsp'),
+                # conda 환경
+                'python -m pylsp',
+            ]
+            
+            process = None
+            for pylsp_path in pylsp_paths:
+                try:
+                    if pylsp_path.startswith('python -m'):
+                        # Python 모듈로 실행하는 경우
+                        process = await asyncio.create_subprocess_exec(
+                            'python', '-m', 'pylsp',
+                            stdin=asyncio.subprocess.PIPE,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                            cwd=os.getcwd()
+                        )
+                    else:
+                        # 직접 실행하는 경우
+                        process = await asyncio.create_subprocess_exec(
+                            pylsp_path,
+                            stdin=asyncio.subprocess.PIPE,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                            cwd=os.getcwd()
+                        )
+                    
+                    # 프로세스가 성공적으로 시작되었는지 확인
+                    if process and process.returncode is None:
+                        logger.info(f"Python LSP 서버 시작: {pylsp_path}")
+                        break
+                        
+                except Exception as path_error:
+                    logger.debug(f"Python LSP 경로 시도 실패 {pylsp_path}: {path_error}")
+                    continue
+            
+            if not process or process.returncode is not None:
+                raise Exception("Python LSP 서버를 찾을 수 없음")
             
             self.clients['python'] = {
                 'process': process,
@@ -118,18 +155,52 @@ class LSPService:
             
         except Exception as e:
             logger.warning(f"Python LSP 서버 시작 실패: {e}")
+            logger.info("Python LSP 서버 설치 방법: pip install python-lsp-server")
     
     async def _start_typescript_lsp(self):
-        """TypeScript LSP 서버 시작"""
+        """TypeScript LSP 서버 시작 - 개선된 버전"""
         try:
-            # typescript-language-server 시작
-            process = await asyncio.create_subprocess_exec(
+            # typescript-language-server 경로 확인 및 시작
+            ts_server_paths = [
                 'typescript-language-server',
-                '--stdio',
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
+                '/usr/local/bin/typescript-language-server',
+                '/opt/homebrew/bin/typescript-language-server',
+                'npx typescript-language-server'
+            ]
+            
+            process = None
+            for ts_path in ts_server_paths:
+                try:
+                    if ts_path.startswith('npx'):
+                        # npx로 실행하는 경우
+                        process = await asyncio.create_subprocess_exec(
+                            'npx', 'typescript-language-server', '--stdio',
+                            stdin=asyncio.subprocess.PIPE,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                            cwd=os.getcwd()
+                        )
+                    else:
+                        # 직접 실행하는 경우
+                        process = await asyncio.create_subprocess_exec(
+                            ts_path, '--stdio',
+                            stdin=asyncio.subprocess.PIPE,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                            cwd=os.getcwd()
+                        )
+                    
+                    # 프로세스가 성공적으로 시작되었는지 확인
+                    if process and process.returncode is None:
+                        logger.info(f"TypeScript LSP 서버 시작: {ts_path}")
+                        break
+                        
+                except Exception as path_error:
+                    logger.debug(f"TypeScript LSP 경로 시도 실패 {ts_path}: {path_error}")
+                    continue
+            
+            if not process or process.returncode is not None:
+                raise Exception("TypeScript LSP 서버를 찾을 수 없음")
             
             self.clients['typescript'] = {
                 'process': process,
@@ -137,46 +208,210 @@ class LSPService:
                 'initialized': False
             }
             
-            # LSP 초기화
+            # 1. 백그라운드 reader task 먼저 시작
+            await self._start_reader_task('typescript')
+            
+            # 2. LSP 초기화
             await self._initialize_lsp_client('typescript')
             
             logger.info("TypeScript LSP 서버 시작 완료")
             
         except Exception as e:
             logger.warning(f"TypeScript LSP 서버 시작 실패: {e}")
+            logger.info("TypeScript LSP 서버 설치 방법: npm install -g typescript-language-server typescript")
     
     async def _start_java_lsp(self):
-        """Java LSP 서버 시작"""
+        """Java LSP 서버 시작 - 개선된 버전"""
         try:
-            # Eclipse JDT Language Server 시작
-            jdt_ls_path = Path.home() / '.local' / 'share' / 'eclipse-jdt-ls'
-            if jdt_ls_path.exists():
-                process = await asyncio.create_subprocess_exec(
-                    'java',
-                    '-jar',
-                    str(jdt_ls_path / 'plugins' / 'org.eclipse.equinox.launcher_*.jar'),
-                    '-configuration',
-                    str(jdt_ls_path / 'config_linux'),
-                    '-data',
-                    str(jdt_ls_path / 'workspace'),
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
+            # Java LSP 서버 경로들 확인
+            java_lsp_paths = [
+                # Eclipse JDT Language Server 경로들
+                Path.home() / '.local' / 'share' / 'eclipse-jdt-ls',
+                Path.home() / 'eclipse-jdt-ls',
+                Path('/opt/eclipse-jdt-ls'),
+                Path('/usr/local/share/eclipse-jdt-ls'),
+                # VSCode 확장에서 사용하는 경로
+                Path.home() / '.vscode' / 'extensions' / 'redhat.java-*' / 'server',
+            ]
+            
+            # Homebrew 설치 경로들 확인 (libexec 구조)
+            homebrew_paths = [
+                # Intel Mac
+                Path('/usr/local/Cellar/jdtls'),
+                # Apple Silicon Mac  
+                Path('/opt/homebrew/Cellar/jdtls'),
+            ]
+            
+            # Homebrew jdtls 버전별 경로 추가
+            for base_path in homebrew_paths:
+                if base_path.exists():
+                    import glob
+                    version_dirs = glob.glob(str(base_path / '*'))
+                    for version_dir in version_dirs:
+                        libexec_path = Path(version_dir) / 'libexec'
+                        if libexec_path.exists():
+                            java_lsp_paths.append(libexec_path)
+            
+            process = None
+            jdt_ls_path = None
+            
+            # 설치된 JDT LS 찾기
+            for path in java_lsp_paths:
+                if '*' in str(path):
+                    # 와일드카드 패턴 처리
+                    import glob
+                    matching_paths = glob.glob(str(path))
+                    if matching_paths:
+                        jdt_ls_path = Path(matching_paths[0])
+                        break
+                elif path.exists():
+                    jdt_ls_path = path
+                    break
+                elif 'jdtls' in str(path) and path.parent.exists():
+                    # Homebrew 버전별 경로 확인
+                    import glob
+                    version_paths = glob.glob(str(path) + '*')
+                    if version_paths:
+                        # 최신 버전 선택
+                        jdt_ls_path = Path(sorted(version_paths)[-1])
+                        break
+            
+            if jdt_ls_path and jdt_ls_path.exists():
+                # launcher jar 파일 찾기
+                plugins_dir = jdt_ls_path / 'plugins'
+                if plugins_dir.exists():
+                    launcher_jars = list(plugins_dir.glob('org.eclipse.equinox.launcher_*.jar'))
+                    if launcher_jars:
+                        launcher_jar = launcher_jars[0]
+                        
+                        # 운영체제별 설정 디렉토리 (Homebrew는 libexec 구조 사용)
+                        config_dirs = [
+                            jdt_ls_path / 'config_mac',
+                            jdt_ls_path / 'config_mac_arm',
+                            jdt_ls_path / 'config_linux',
+                            jdt_ls_path / 'config_linux_arm',
+                            jdt_ls_path / 'config_win'
+                        ]
+                        
+                        config_dir = None
+                        for cfg in config_dirs:
+                            if cfg.exists():
+                                config_dir = cfg
+                                break
+                        
+                        if not config_dir:
+                            config_dir = jdt_ls_path / 'config_linux'  # 기본값
+                        
+                        # 워크스페이스 디렉토리
+                        workspace_dir = jdt_ls_path / 'workspace'
+                        workspace_dir.mkdir(exist_ok=True)
+                        
+                        # Java LSP 서버 실행
+                        java_cmd = [
+                            'java',
+                            '-Declipse.application=org.eclipse.jdt.ls.core.id1',
+                            '-Dosgi.bundles.defaultStartLevel=4',
+                            '-Declipse.product=org.eclipse.jdt.ls.core.product',
+                            '-Dlog.protocol=true',
+                            '-Dlog.level=ALL',
+                            '-jar', str(launcher_jar),
+                            '-configuration', str(config_dir),
+                            '-data', str(workspace_dir),
+                            '--add-modules=ALL-SYSTEM',
+                            '--add-opens', 'java.base/java.util=ALL-UNNAMED',
+                            '--add-opens', 'java.base/java.lang=ALL-UNNAMED'
+                        ]
+                        
+                        process = await asyncio.create_subprocess_exec(
+                            *java_cmd,
+                            stdin=asyncio.subprocess.PIPE,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                            cwd=os.getcwd()
+                        )
+                        
+                        logger.info(f"Java LSP 서버 시작: {jdt_ls_path}")
+                    else:
+                        raise Exception("Eclipse JDT LS launcher jar를 찾을 수 없음")
+                else:
+                    raise Exception("Eclipse JDT LS plugins 디렉토리를 찾을 수 없음")
+            else:
+                # jdtls 명령어로 시도 (Homebrew 등으로 설치된 경우)
+                jdtls_commands = [
+                    'jdtls',
+                    '/usr/local/bin/jdtls',
+                    '/opt/homebrew/bin/jdtls',
+                    'java -jar /usr/local/Cellar/jdtls/*/libexec/plugins/org.eclipse.equinox.launcher_*.jar'
+                ]
                 
-                self.clients['java'] = {
-                    'process': process,
-                    'language': 'java',
-                    'initialized': False
-                }
+                for cmd in jdtls_commands:
+                    try:
+                        if cmd.startswith('java -jar'):
+                            # Java jar 명령어로 실행
+                            import glob
+                            jar_patterns = [
+                                '/usr/local/Cellar/jdtls/*/libexec/plugins/org.eclipse.equinox.launcher_*.jar',
+                                '/opt/homebrew/Cellar/jdtls/*/libexec/plugins/org.eclipse.equinox.launcher_*.jar'
+                            ]
+                            
+                            jar_path = None
+                            for pattern in jar_patterns:
+                                jars = glob.glob(pattern)
+                                if jars:
+                                    jar_path = jars[0]
+                                    break
+                            
+                            if jar_path:
+                                process = await asyncio.create_subprocess_exec(
+                                    'java', '-jar', jar_path,
+                                    stdin=asyncio.subprocess.PIPE,
+                                    stdout=asyncio.subprocess.PIPE,
+                                    stderr=asyncio.subprocess.PIPE,
+                                    cwd=os.getcwd()
+                                )
+                                logger.info(f"Java LSP 서버 시작: {jar_path}")
+                                break
+                        else:
+                            # 직접 명령어 실행
+                            process = await asyncio.create_subprocess_exec(
+                                cmd,
+                                stdin=asyncio.subprocess.PIPE,
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE,
+                                cwd=os.getcwd()
+                            )
+                            logger.info(f"Java LSP 서버 시작: {cmd}")
+                            break
+                            
+                    except Exception as e:
+                        logger.debug(f"Java LSP 명령어 시도 실패 {cmd}: {e}")
+                        continue
                 
-                # LSP 초기화
-                await self._initialize_lsp_client('java')
-                
-                logger.info("Java LSP 서버 시작 완료")
+                if not process:
+                    raise Exception("Java LSP 서버를 찾을 수 없음")
+            
+            if not process or process.returncode is not None:
+                raise Exception("Java LSP 서버 프로세스 시작 실패")
+            
+            self.clients['java'] = {
+                'process': process,
+                'language': 'java',
+                'initialized': False
+            }
+            
+            # 1. 백그라운드 reader task 먼저 시작
+            await self._start_reader_task('java')
+            
+            # 2. LSP 초기화
+            await self._initialize_lsp_client('java')
+            
+            logger.info("Java LSP 서버 시작 완료")
             
         except Exception as e:
             logger.warning(f"Java LSP 서버 시작 실패: {e}")
+            logger.info("Java LSP 서버 설치 방법:")
+            logger.info("1. Eclipse JDT LS 다운로드: https://download.eclipse.org/jdtls/milestones/")
+            logger.info("2. 또는 Homebrew: brew install jdtls")
     
     async def _initialize_lsp_client(self, language: str):
         """LSP 클라이언트 초기화 - 올바른 LSP 프로토콜"""
@@ -197,7 +432,21 @@ class LSPService:
                     'rootUri': f"file://{os.getcwd()}",
                     'capabilities': {
                         'textDocument': {
-                            'documentSymbol': {'dynamicRegistration': True}
+                            'documentSymbol': {'dynamicRegistration': True},
+                            'definition': {'dynamicRegistration': True},
+                            'references': {'dynamicRegistration': True},
+                            'signatureHelp': {'dynamicRegistration': True},
+                            'completion': {
+                                'dynamicRegistration': True,
+                                'completionItem': {
+                                    'snippetSupport': True,
+                                    'commitCharactersSupport': True
+                                }
+                            }
+                        },
+                        'workspace': {
+                            'workspaceFolders': True,
+                            'configuration': True
                         }
                     },
                     'clientInfo': {
@@ -905,6 +1154,33 @@ class LSPService:
         except Exception as e:
             logger.error(f"가시성 분석 실패: {e}")
             return 'unknown'
+    
+    def get_server_status(self) -> Dict[str, Dict[str, Any]]:
+        """LSP 서버들의 상태 반환"""
+        status = {}
+        for language, client in self.clients.items():
+            process = client['process']
+            status[language] = {
+                'initialized': client.get('initialized', False),
+                'process_running': process.returncode is None if process else False,
+                'reader_task_active': language in self._reader_tasks and not self._reader_tasks[language].done(),
+                'pending_requests': len(self._response_futures.get(language, {}))
+            }
+        return status
+    
+    def is_server_ready(self, language: str) -> bool:
+        """특정 언어 서버가 준비되었는지 확인"""
+        if language not in self.clients:
+            return False
+        
+        client = self.clients[language]
+        process = client['process']
+        
+        return (
+            client.get('initialized', False) and
+            process and process.returncode is None and
+            language in self._reader_tasks and not self._reader_tasks[language].done()
+        )
     
     async def shutdown(self):
         """LSP 서비스 종료"""
