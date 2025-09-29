@@ -8,11 +8,11 @@ __pycache__/
 
 
 .gitignore
-core/util/tree-sitter-wasms
-python/vendor/
+# core/util/tree-sitter-wasms
+# python/vendor/
 
 # Distribution / packaging
-.Python
+# .Python
 build/
 develop-eggs/
 dist/
