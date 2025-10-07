@@ -10,6 +10,9 @@ __pycache__/
 .gitignore
 core/util/tree-sitter-wasms
 python/vendor/
+python_chunking/.idea/
+python_chunking/data/
+python_chunking/vendor/
 
 # Distribution / packaging
 .Python
