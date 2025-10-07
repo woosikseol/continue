@@ -6,6 +6,11 @@ __pycache__/
 # C extensions
 *.so
 
+
+python_chunking/.idea/
+python_chunking/data/
+python_chunking/vendor/
+
 # Distribution / packaging
 .Python
 build/
