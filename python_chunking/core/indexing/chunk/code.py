@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from core.index import ChunkWithoutID
 from core.llm.count_tokens import count_tokens_async
 from core.util.tree_sitter import get_parser_for_file
+from .metadata import get_language_from_filepath
 
 
 def collapsed_replacement(node: Node) -> str:
@@ -116,8 +117,30 @@ async def construct_function_definition_chunk(
     return collapsed_body
 
 
+async def construct_root_definition_chunk(
+    node: Node,
+    code: str,
+    max_chunk_size: int,
+) -> str:
+    """Construct chunk for root node (module/source_file)"""
+    # 루트 노드는 최상위 정의들만 포함하는 축소 청크 생성
+    collapsed_body = await collapse_children(
+        node,
+        code,
+        ["module", "source_file", "program"],  # 루트 컨테이너
+        ["class_definition", "function_definition", "class_declaration", "function_declaration"],  # 축소할 항목
+        ["class_body", "block", "statement_block", "declaration_list"],  # 블록 타입
+        max_chunk_size,
+    )
+    return collapsed_body
+
+
 # Node constructors for different node types
 COLLAPSED_NODE_CONSTRUCTORS: Dict[str, Callable] = {
+    # Root nodes
+    "module": construct_root_definition_chunk,
+    "source_file": construct_root_definition_chunk,
+    "program": construct_root_definition_chunk,
     # Classes, structs, etc
     "class_definition": construct_class_definition_chunk,
     "class_declaration": construct_class_definition_chunk,
@@ -130,11 +153,16 @@ COLLAPSED_NODE_CONSTRUCTORS: Dict[str, Callable] = {
     "method_declaration": construct_function_definition_chunk,
 }
 
-# 클래스 타입만 별도로 정의
-CLASS_NODE_TYPES = {
-    "class_definition",
-    "class_declaration",
-    "impl_item",
+# 구조적 노드: 루트 + 클래스 (항상 축소 청크 생성 + 자식 재귀)
+STRUCTURAL_NODE_TYPES = {
+    # Root nodes
+    "module",  # Python
+    "source_file",  # Java, C, etc
+    "program",  # JavaScript, TypeScript
+    # Class nodes
+    "class_definition",  # Python
+    "class_declaration",  # Java, JavaScript, TypeScript
+    "impl_item",  # Rust
 }
 
 
@@ -162,29 +190,41 @@ async def get_smart_collapsed_chunks(
     code: str,
     max_chunk_size: int,
     root: bool = True,
+    root_node: Optional[Node] = None,
+    filepath: str = "",
 ) -> AsyncGenerator[ChunkWithoutID, None]:
     """Get smart collapsed chunks for a node"""
     
-    # 현재 구현에서는 source_file type 에 해당하는 root 노드는 Collapse 처리하지 않음
+    # root_node가 None이면 현재 노드를 root_node로 사용 (초기 호출 시)
+    if root_node is None:
+        root_node = node
     
-    # 클래스 노드는 항상 축소 청크 생성 + 자식 재귀
-    # 이를 통해 일관성 있는 메타데이터 추출 가능
-    if node.type in CLASS_NODE_TYPES:
+    # 언어 추출
+    language = get_language_from_filepath(filepath)
+    
+    # 구조적 노드(루트/클래스)는 항상 축소 청크 생성 + 자식 재귀
+    # 이를 통해 계층적 메타데이터 추출 가능
+    if node.type in STRUCTURAL_NODE_TYPES:
         # 1. 축소된 요약 청크 생성 (크기와 무관하게 항상 실행)
         collapsed_content = await COLLAPSED_NODE_CONSTRUCTORS[node.type](
             node, code, max_chunk_size
         )
+        
         yield ChunkWithoutID(
             content=collapsed_content,
             start_line=node.start_point[0],
             end_line=node.end_point[0],
+            node=node,
+            root_node=root_node,
+            language=language,
+            filepath=filepath,
         )
         
         # 2. 자식 노드로 재귀 (크기와 무관하게 항상 실행)
         # 각 메서드를 개별 청크로 생성
         for child in node.children:
             async for child_chunk in get_smart_collapsed_chunks(
-                child, code, max_chunk_size, False
+                child, code, max_chunk_size, False, root_node, filepath
             ):
                 yield child_chunk
         return
@@ -193,6 +233,12 @@ async def get_smart_collapsed_chunks(
     chunk = await maybe_yield_chunk(node, code, max_chunk_size, root)
     if chunk:
         # 토큰 수가 한도 이하 → 노드 전체를 청크로 채택
+        # 노드 정보 저장 (메타데이터는 나중에 통합 추출)
+        chunk.node = node
+        chunk.root_node = root_node
+        chunk.language = language
+        chunk.filepath = filepath
+        
         yield chunk
         # 재귀하지 않음 (중복 방지)
         return
@@ -203,16 +249,21 @@ async def get_smart_collapsed_chunks(
             collapsed_content = await COLLAPSED_NODE_CONSTRUCTORS[node.type](
                 node, code, max_chunk_size
             )
+            
             yield ChunkWithoutID(
                 content=collapsed_content,
                 start_line=node.start_point[0],
                 end_line=node.end_point[0],
+                node=node,
+                root_node=root_node,
+                language=language,
+                filepath=filepath,
             )
         
         # 자식 노드로 재귀
         for child in node.children:
             async for child_chunk in get_smart_collapsed_chunks(
-                child, code, max_chunk_size, False
+                child, code, max_chunk_size, False, root_node, filepath
             ):
                 yield child_chunk
 
@@ -233,7 +284,7 @@ async def code_chunker(
     tree = parser.parse(bytes(contents, "utf8"))
     
     async for chunk in get_smart_collapsed_chunks(
-        tree.root_node, contents, max_chunk_size
+        tree.root_node, contents, max_chunk_size, True, tree.root_node, filepath
     ):
         yield chunk
 

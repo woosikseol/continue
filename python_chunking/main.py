@@ -78,6 +78,17 @@ async def main():
         for i, chunk in enumerate(chunks, 1):
             filename = Path(chunk.filepath).name
             print(f"  {i}. {filename}:{chunk.start_line}-{chunk.end_line}")
+            
+            # 메타데이터 출력
+            if chunk.metadata:
+                if chunk.metadata.symbol_type and chunk.metadata.symbol_name:
+                    print(f"     Symbol: {chunk.metadata.symbol_type} '{chunk.metadata.symbol_name}'")
+                if chunk.metadata.imports:
+                    imports_str = ', '.join(chunk.metadata.imports[:3])
+                    if len(chunk.metadata.imports) > 3:
+                        imports_str += f" ... (+{len(chunk.metadata.imports) - 3})"
+                    print(f"     Imports: {imports_str}")
+            
             content_preview = chunk.content.replace('\n', ' ').strip()[:80]
             print(f"     Content: {content_preview}...")
             print()

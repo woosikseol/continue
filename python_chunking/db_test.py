@@ -21,9 +21,45 @@ async def main():
     if df.empty:
         print(f"테이블 '{TABLE_NAME}'에는 데이터가 없습니다.")
     else:
+        # pandas 출력 옵션 설정
+        pd.set_option('display.max_columns', None)
+        pd.set_option('display.max_rows', None)
+        pd.set_option('display.width', None)
+        pd.set_option('display.max_colwidth', 100)
+        
         columns_to_display = [col for col in df.columns if col not in ['vector', 'embedding']]
         print(df[columns_to_display])
         print(f"\n총 {len(df)}개의 행이 있습니다.")
+        
+        # 메타데이터 상세 출력
+        print("\n--- [ 메타데이터 상세 ] ---")
+        for idx, row in df.iterrows():
+            print(f"\n청크 #{idx}:")
+            print(f"  파일: {row['path']}")
+            print(f"  라인: {row['start_line']}-{row['end_line']}")
+            print(f"  인덱스: {row['index']}")
+            
+            # 메타데이터 파싱 및 출력
+            if row['metadata']:
+                import json
+                try:
+                    metadata = json.loads(row['metadata'])
+                    if metadata.get('symbol_type') or metadata.get('symbol_name'):
+                        print(f"  심볼: {metadata.get('symbol_type', 'N/A')} '{metadata.get('symbol_name', 'N/A')}'")
+                    if metadata.get('imports'):
+                        print(f"  Import: {', '.join(metadata['imports'][:3])}{'...' if len(metadata['imports']) > 3 else ''}")
+                    if metadata.get('exports'):
+                        print(f"  Export: {', '.join(metadata['exports'])}")
+                    if metadata.get('references_to'):
+                        refs = ', '.join(metadata['references_to'][:5])
+                        if len(metadata['references_to']) > 5:
+                            refs += f" ... (+{len(metadata['references_to']) - 5})"
+                        print(f"  참조: {refs}")
+                except:
+                    print(f"  메타데이터: {row['metadata'][:100]}...")
+            else:
+                print("  메타데이터: 없음")
+        
         print("\n--- [ 파일별 청크 개수 ] ---")
         print(df['path'].value_counts())
 

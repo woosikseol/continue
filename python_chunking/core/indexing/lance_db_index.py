@@ -5,9 +5,10 @@ import asyncio
 from typing import List, Dict, Optional, AsyncGenerator
 import lancedb
 import numpy as np
+import json
 from pathlib import Path
 from core.index import (
-    Chunk, ChunkWithoutID, ILLM, IndexingProgressUpdate, 
+    Chunk, ChunkWithoutID, ChunkMetadata, ILLM, IndexingProgressUpdate, 
     PathAndCacheKey, RefreshIndexResults, MarkCompleteCallback,
     IndexResultType, BranchAndDir
 )
@@ -86,6 +87,25 @@ class LanceDbIndex:
         # Prepare data for insertion
         data = []
         for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+            # 메타데이터를 JSON으로 직렬화
+            metadata_json = None
+            if chunk.metadata:
+                metadata_dict = {
+                    "symbol_type": chunk.metadata.symbol_type,
+                    "symbol_name": chunk.metadata.symbol_name,
+                    "imports": chunk.metadata.imports,
+                    "exports": chunk.metadata.exports,
+                    "references_to": chunk.metadata.references_to,
+                    "referenced_by": chunk.metadata.referenced_by,
+                    "symbol_definitions": chunk.metadata.symbol_definitions,
+                    "extends": chunk.metadata.extends,
+                    "implements": chunk.metadata.implements,
+                    "subclasses": chunk.metadata.subclasses,
+                    "dependencies": chunk.metadata.dependencies,
+                    "dependents": chunk.metadata.dependents,
+                }
+                metadata_json = json.dumps(metadata_dict, ensure_ascii=False)
+            
             data.append({
                 "uuid": f"chunk_{i}_{hash(chunk.content)}",
                 "path": chunk.filepath,
@@ -95,6 +115,7 @@ class LanceDbIndex:
                 "start_line": chunk.start_line,
                 "end_line": chunk.end_line,
                 "index": chunk.index,
+                "metadata": metadata_json,
             })
         
         if data:
@@ -148,6 +169,15 @@ class LanceDbIndex:
             
             chunks = []
             for row in docs:
+                # 메타데이터 역직렬화
+                metadata = None
+                if "metadata" in row and row["metadata"]:
+                    try:
+                        metadata_dict = json.loads(row["metadata"])
+                        metadata = ChunkMetadata(**metadata_dict)
+                    except Exception as e:
+                        print(f"Failed to deserialize metadata: {e}")
+                
                 chunk = Chunk(
                     content=row["content"],
                     start_line=row["start_line"],
@@ -155,6 +185,7 @@ class LanceDbIndex:
                     filepath=row["path"],
                     index=row["index"],
                     digest=row["cachekey"],
+                    metadata=metadata,
                 )
                 chunks.append(chunk)
             
