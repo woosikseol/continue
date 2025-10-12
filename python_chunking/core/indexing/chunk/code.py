@@ -130,6 +130,13 @@ COLLAPSED_NODE_CONSTRUCTORS: Dict[str, Callable] = {
     "method_declaration": construct_function_definition_chunk,
 }
 
+# 클래스 타입만 별도로 정의
+CLASS_NODE_TYPES = {
+    "class_definition",
+    "class_declaration",
+    "impl_item",
+}
+
 
 async def maybe_yield_chunk(
     node: Node,
@@ -157,15 +164,13 @@ async def get_smart_collapsed_chunks(
     root: bool = True,
 ) -> AsyncGenerator[ChunkWithoutID, None]:
     """Get smart collapsed chunks for a node"""
-    chunk = await maybe_yield_chunk(node, code, max_chunk_size, root)
-    if chunk:
-        yield chunk
-        return
     
     # 현재 구현에서는 source_file type 에 해당하는 root 노드는 Collapse 처리하지 않음
-
-    # If a collapsed form is defined, use that
-    if node.type in COLLAPSED_NODE_CONSTRUCTORS:
+    
+    # 클래스 노드는 항상 축소 청크 생성 + 자식 재귀
+    # 이를 통해 일관성 있는 메타데이터 추출 가능
+    if node.type in CLASS_NODE_TYPES:
+        # 1. 축소된 요약 청크 생성 (크기와 무관하게 항상 실행)
         collapsed_content = await COLLAPSED_NODE_CONSTRUCTORS[node.type](
             node, code, max_chunk_size
         )
@@ -174,13 +179,42 @@ async def get_smart_collapsed_chunks(
             start_line=node.start_point[0],
             end_line=node.end_point[0],
         )
+        
+        # 2. 자식 노드로 재귀 (크기와 무관하게 항상 실행)
+        # 각 메서드를 개별 청크로 생성
+        for child in node.children:
+            async for child_chunk in get_smart_collapsed_chunks(
+                child, code, max_chunk_size, False
+            ):
+                yield child_chunk
+        return
     
-    # Recurse through children
-    for child in node.children:
-        async for child_chunk in get_smart_collapsed_chunks(
-            child, code, max_chunk_size, False
-        ):
-            yield child_chunk
+    # 함수/메서드 등 일반 노드: 토큰 수에 따라 처리
+    chunk = await maybe_yield_chunk(node, code, max_chunk_size, root)
+    if chunk:
+        # 토큰 수가 한도 이하 → 노드 전체를 청크로 채택
+        yield chunk
+        # 재귀하지 않음 (중복 방지)
+        return
+    else:
+        # 토큰 수 초과 → 스마트 축소 시도
+        if node.type in COLLAPSED_NODE_CONSTRUCTORS:
+            # 축소 가능한 노드면 축소 시도
+            collapsed_content = await COLLAPSED_NODE_CONSTRUCTORS[node.type](
+                node, code, max_chunk_size
+            )
+            yield ChunkWithoutID(
+                content=collapsed_content,
+                start_line=node.start_point[0],
+                end_line=node.end_point[0],
+            )
+        
+        # 자식 노드로 재귀
+        for child in node.children:
+            async for child_chunk in get_smart_collapsed_chunks(
+                child, code, max_chunk_size, False
+            ):
+                yield child_chunk
 
 
 async def code_chunker(
