@@ -67,12 +67,25 @@ async def main():
                                 imports_str += '...'
                             print(f"  Import: {imports_str}")
                         if metadata.get('exports'):
-                            print(f"  Export: {', '.join(metadata['exports'])}")
+                            print(f"  Export: {', '.join(metadata['exports'][:3])}{'...' if len(metadata['exports']) > 3 else ''}")
                         if metadata.get('references_to'):
                             refs = ', '.join(metadata['references_to'][:5])
                             if len(metadata['references_to']) > 5:
                                 refs += f" ... (+{len(metadata['references_to']) - 5})"
                             print(f"  참조: {refs}")
+                        
+                        # 크로스 파일 메타데이터 (새로 추가됨)
+                        if metadata.get('referenced_by'):
+                            ref_by = ', '.join(metadata['referenced_by'][:3])
+                            if len(metadata['referenced_by']) > 3:
+                                ref_by += f" ... (+{len(metadata['referenced_by']) - 3})"
+                            print(f"  ✨ Referenced by: {ref_by}")
+                        if metadata.get('subclasses'):
+                            print(f"  ✨ Subclasses: {', '.join(metadata['subclasses'])}")
+                        if metadata.get('dependencies'):
+                            print(f"  ✨ Dependencies: {', '.join(metadata['dependencies'])}")
+                        if metadata.get('dependents'):
+                            print(f"  ✨ Dependents: {', '.join(metadata['dependents'])}")
                     except Exception as e:
                         print(f"  메타데이터 파싱 오류: {e}")
                 else:

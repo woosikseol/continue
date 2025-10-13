@@ -9,6 +9,7 @@
 - **다중 언어 지원**: Java, JavaScript, Python 등 다양한 언어 지원
 - **pgvector 벡터 저장**: PostgreSQL + pgvector를 사용한 벡터 임베딩 및 유사도 검색
 - **통합 메타데이터**: JSONB를 활용한 풍부한 코드 메타데이터 저장
+- **크로스 파일 분석**: 파일 간 관계 자동 분석 (referenced_by, subclasses, dependencies, dependents)
 
 ## 설치
 
@@ -186,13 +187,23 @@ python db_test.py
 
 ## 아키텍처
 
-### 청킹 프로세스
+### 청킹 프로세스 (2-Pass)
 
+#### Pass 1: 단일 파일 분석
 1. **파일 타입 확인**: 확장자를 기반으로 코드 파일인지 확인
 2. **Tree-sitter 파싱**: 지원되는 언어의 경우 Tree-sitter로 AST 생성
 3. **스마트 축소**: `getSmartCollapsedChunks`로 AST 노드별 구조적 청킹
 4. **토큰 검증**: 최대 토큰 수 제한 확인
-5. **벡터 임베딩**: PostgreSQL + pgvector에 저장
+5. **메타데이터 추출**: 심볼, imports, exports, 참조 관계 등
+6. **벡터 임베딩 및 저장**: PostgreSQL + pgvector에 저장
+
+#### Pass 2: 크로스 파일 분석
+1. **심볼 맵 구축**: 모든 심볼 정의 수집
+2. **referenced_by**: 누가 나를 참조하는가
+3. **subclasses**: 누가 나를 상속하는가
+4. **dependencies**: 내가 의존하는 파일들
+5. **dependents**: 누가 나를 의존하는가
+6. **업데이트된 메타데이터 재저장**
 
 ### 지원 언어
 

@@ -219,19 +219,99 @@ class PgVectorIndex:
             print(f"Error retrieving chunks: {e}")
             return []
     
+    async def _build_cross_file_relationships(self, all_chunks: List[Chunk]):
+        """
+        크로스 파일 분석을 수행하여 referenced_by, subclasses, dependencies, dependents를 구축
+        """
+        # 1. 심볼 맵 구축: {symbol_name: [chunks]}
+        symbol_map: Dict[str, List[Chunk]] = {}
+        
+        # 2. 파일별 export 맵 구축: {filepath: [exported_symbols]}
+        file_exports: Dict[str, List[str]] = {}
+        
+        for chunk in all_chunks:
+            if not chunk.metadata:
+                continue
+            
+            # 심볼 정의 수집
+            if chunk.metadata.symbol_name:
+                symbol_name = chunk.metadata.symbol_name
+                if symbol_name not in symbol_map:
+                    symbol_map[symbol_name] = []
+                symbol_map[symbol_name].append(chunk)
+            
+            # Export 수집 (파일 레벨)
+            if chunk.metadata.exports:
+                rel_path = self._get_relative_path(chunk.filepath)
+                if rel_path not in file_exports:
+                    file_exports[rel_path] = []
+                file_exports[rel_path].extend(chunk.metadata.exports)
+        
+        # 3. 크로스 파일 관계 구축
+        for chunk in all_chunks:
+            if not chunk.metadata:
+                continue
+            
+            # 3.1 referenced_by: 누가 나를 참조하는가?
+            if chunk.metadata.symbol_name:
+                for other_chunk in all_chunks:
+                    if not other_chunk.metadata or other_chunk == chunk:
+                        continue
+                    
+                    if chunk.metadata.symbol_name in other_chunk.metadata.references_to:
+                        ref_location = f"{self._get_relative_path(other_chunk.filepath)}:{other_chunk.start_line}"
+                        if ref_location not in chunk.metadata.referenced_by:
+                            chunk.metadata.referenced_by.append(ref_location)
+            
+            # 3.2 subclasses: 누가 나를 상속하는가?
+            if chunk.metadata.symbol_type == "class" and chunk.metadata.symbol_name:
+                for other_chunk in all_chunks:
+                    if not other_chunk.metadata or other_chunk == chunk:
+                        continue
+                    
+                    if other_chunk.metadata.extends == chunk.metadata.symbol_name:
+                        if other_chunk.metadata.symbol_name not in chunk.metadata.subclasses:
+                            chunk.metadata.subclasses.append(other_chunk.metadata.symbol_name)
+            
+            # 3.3 dependencies: 내가 import한 심볼들이 어떤 파일에서 왔는가?
+            if chunk.metadata.imports:
+                for imported_symbol in chunk.metadata.imports:
+                    # 어떤 파일이 이 심볼을 export하는지 찾기
+                    for file_path, exports in file_exports.items():
+                        if imported_symbol in exports:
+                            if file_path not in chunk.metadata.dependencies:
+                                chunk.metadata.dependencies.append(file_path)
+            
+            # 3.4 dependents: 누가 나의 심볼을 import하는가?
+            if chunk.metadata.exports:
+                rel_path = self._get_relative_path(chunk.filepath)
+                for other_chunk in all_chunks:
+                    if not other_chunk.metadata or other_chunk.filepath == chunk.filepath:
+                        continue
+                    
+                    # 다른 청크가 내 export를 import하는지 확인
+                    for exported_symbol in chunk.metadata.exports:
+                        if exported_symbol in other_chunk.metadata.imports:
+                            other_rel_path = self._get_relative_path(other_chunk.filepath)
+                            if other_rel_path not in chunk.metadata.dependents:
+                                chunk.metadata.dependents.append(other_rel_path)
+    
     async def update(
         self,
         tag: str,
         results: RefreshIndexResults,
         mark_complete: MarkCompleteCallback,
     ) -> AsyncGenerator[IndexingProgressUpdate, None]:
-        """Update the index with new chunks"""
+        """Update the index with new chunks (2-pass: single file + cross-file analysis)"""
         await self.initialize()
         
         total_items = len(results.compute) + len(results.add_tag) + len(results.delete)
         processed = 0
         
-        # Process compute items
+        # Pass 1: 단일 파일 분석 및 저장
+        all_chunks: List[Chunk] = []
+        
+        print("\n=== Pass 1: Single File Analysis ===")
         for item in results.compute:
             try:
                 with open(item.path, 'r', encoding='utf-8') as f:
@@ -239,6 +319,7 @@ class PgVectorIndex:
                 
                 chunks = await self.get_chunks(item, content)
                 if chunks:
+                    all_chunks.extend(chunks)
                     embeddings = await self.get_embeddings(chunks)
                     await self.insert_chunks(chunks, embeddings)
                 
@@ -246,9 +327,9 @@ class PgVectorIndex:
                 processed += 1
                 
                 yield IndexingProgressUpdate(
-                    desc=f"Processed {item.path}",
+                    desc=f"Pass 1: Processed {item.path}",
                     status="success",
-                    progress=processed / total_items
+                    progress=processed / (total_items + 1)  # +1 for pass 2
                 )
                 
             except Exception as e:
@@ -258,18 +339,31 @@ class PgVectorIndex:
                 yield IndexingProgressUpdate(
                     desc=f"Error processing {item.path}",
                     status="error",
-                    progress=processed / total_items
+                    progress=processed / (total_items + 1)
                 )
+        
+        # Pass 2: 크로스 파일 분석 및 업데이트
+        if all_chunks:
+            print(f"\n=== Pass 2: Cross-File Analysis ({len(all_chunks)} chunks) ===")
+            await self._build_cross_file_relationships(all_chunks)
+            
+            # 업데이트된 메타데이터로 재저장
+            embeddings = await self.get_embeddings(all_chunks)
+            await self.insert_chunks(all_chunks, embeddings)
+            
+            yield IndexingProgressUpdate(
+                desc=f"Pass 2: Cross-file analysis completed",
+                status="success",
+                progress=1.0
+            )
         
         # Process add_tag items
         for item in results.add_tag:
-            # Add tag logic here if needed
             mark_complete([item], IndexResultType.ADD_TAG)
             processed += 1
         
         # Process delete items
         for item in results.delete:
-            # Delete logic here if needed
             mark_complete([item], IndexResultType.DELETE)
             processed += 1
     
