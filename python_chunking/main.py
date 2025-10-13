@@ -6,18 +6,20 @@ import sys
 import argparse
 import hashlib
 from pathlib import Path
+from typing import List
 from core.index import PathAndCacheKey, RefreshIndexResults, IndexResultType
-from core.indexing.lance_db_index import LanceDbIndex
+from core.indexing.pgvector_index import PgVectorIndex  # 변경
 from core.embeddings.embeddings_provider import EmbeddingsProvider
 
 
 class MockMarkCompleteCallback:
     """Mock callback for marking operations complete"""
     def __call__(self, items, result_type):
-        print(f"Marked {len(items)} items as {result_type.value}")
+        # Silent completion - don't print to avoid cluttering output
+        pass
 
 
-def get_files_from_directory(directory_path: Path) -> list[PathAndCacheKey]:
+def get_files_from_directory(directory_path: Path) -> List[PathAndCacheKey]:
     """
     디렉토리를 순회하여 모든 파일에 대한 PathAndCacheKey 리스트 생성
     
@@ -119,8 +121,8 @@ async def main():
     # Initialize embeddings provider
     embeddings_provider = EmbeddingsProvider(max_embedding_chunk_size=500)
     
-    # Initialize LanceDB index
-    index = LanceDbIndex(embeddings_provider)
+    # Initialize PgVector index with base_path for relative paths
+    index = PgVectorIndex(embeddings_provider, base_path=str(target_dir))
     
     # 디렉토리에서 파일 목록 가져오기
     test_files = get_files_from_directory(target_dir)

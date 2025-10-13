@@ -7,7 +7,8 @@
 - **Tree-sitter 기반 파싱**: C++ 기반의 Tree-sitter 파서를 Python에서 직접 사용
 - **스마트 청킹**: AST 노드별로 구조적 청킹 수행
 - **다중 언어 지원**: Java, JavaScript, Python 등 다양한 언어 지원
-- **LanceDB 벡터 저장**: 벡터 임베딩을 통한 유사도 검색
+- **pgvector 벡터 저장**: PostgreSQL + pgvector를 사용한 벡터 임베딩 및 유사도 검색
+- **통합 메타데이터**: JSONB를 활용한 풍부한 코드 메타데이터 저장
 
 ## 설치
 
@@ -58,41 +59,110 @@ python build_parsers.py
 
 ## 사용법
 
-### 기본 사용법
+### 0. PostgreSQL 및 pgvector 설정
+
+```bash
+# PostgreSQL 및 pgvector 설치 (macOS)
+brew install postgresql pgvector
+brew services start postgresql
+
+# 데이터베이스 생성
+psql postgres
+CREATE DATABASE code_chunks;
+\c code_chunks;
+CREATE EXTENSION vector;
+
+# 테이블 생성 (아래 SQL 실행)
+```
+
+```sql
+CREATE TABLE chunks (
+    id SERIAL PRIMARY KEY,
+    uuid TEXT UNIQUE NOT NULL,
+    path TEXT NOT NULL,
+    cachekey TEXT NOT NULL,
+    content TEXT NOT NULL,
+    start_line INTEGER NOT NULL,
+    end_line INTEGER NOT NULL,
+    index INTEGER NOT NULL,
+    metadata JSONB,
+    embedding vector(384)
+);
+
+CREATE INDEX ON chunks USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX ON chunks USING gin (metadata);
+CREATE INDEX ON chunks (path);
+CREATE INDEX ON chunks (cachekey);
+```
+
+### 1. 기본 사용법
 
 ```python
 import asyncio
-from core.indexing.lance_db_index import LanceDbIndex
-from core.index import ILLM, PathAndCacheKey
+from core.indexing.pgvector_index import PgVectorIndex
+from core.embeddings.embeddings_provider import EmbeddingsProvider
+from core.index import PathAndCacheKey
 
 async def main():
     # 임베딩 프로바이더 초기화
-    embeddings_provider = ILLM(max_embedding_chunk_size=1000)
+    embeddings_provider = EmbeddingsProvider()
     
-    # LanceDB 인덱스 초기화
-    index = LanceDbIndex(embeddings_provider)
+    # PgVector 인덱스 초기화 (base_path 지정하여 상대 경로 사용)
+    index = PgVectorIndex(
+        embeddings_provider,
+        base_path="/path/to/your/project"
+    )
+    await index.initialize()
     
     # 파일 청킹
     file_item = PathAndCacheKey(path="example.py", cache_key="hash123")
     chunks = await index.get_chunks(file_item, "your code content here")
     
-    # 검색
-    results = await index.retrieve("query", n_retrieve=10)
+    # 임베딩 생성 및 저장 (상대 경로로 저장됨)
+    embeddings = await index.get_embeddings(chunks)
+    await index.insert_chunks(chunks, embeddings)
+    
+    # 검색 (절대 경로로 반환됨)
+    results = await index.retrieve("calculator class", n_retrieve=10)
+    
+    # 필터링 검색 (상대 경로로 필터링)
+    results = await index.retrieve(
+        "add function",
+        n_retrieve=5,
+        filters={"path": "example.py"}
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### 실행
+### 2. 실행
 
-**전체 시스템 실행:**
+**디렉토리 인덱싱:**
 ```bash
-python main.py
+# 특정 디렉토리의 코드 파일 인덱싱
+python main.py ./test_files
+
+# 다른 디렉토리 인덱싱
+python main.py /path/to/your/code
 ```
 
-**간단한 테스트:**
+**데이터 확인 및 검색:**
 ```bash
-python test_simple.py
+# 저장된 데이터 확인 및 벡터 검색 테스트
+python db_test.py
+```
+
+**데이터 삭제:**
+```bash
+# 대화형으로 데이터 삭제 (확인 요청)
+python drop_table.py
+
+# 확인 없이 즉시 삭제 (주의!)
+python drop_table.py --force
+
+# 테이블 자체를 삭제 (주의!)
+python drop_table.py --drop-table --force
 ```
 
 **완전한 설치 및 실행 순서:**
@@ -100,13 +170,18 @@ python test_simple.py
 # 1. 의존성 설치
 pip install -r requirements.txt
 
-# 2. Tree-sitter 파서 설정
+# 2. PostgreSQL 및 pgvector 설정
+psql postgres < PGVECTOR_SETUP.sql
+
+# 3. Tree-sitter 파서 설정
 python setup_vendor.py    # 소스 다운로드
 python build_parsers.py   # 파서 컴파일
 
-# 3. 실행
-python main.py           # 전체 시스템
-python test_simple.py    # 간단한 테스트
+# 4. 코드 인덱싱
+python main.py ./test_files
+
+# 5. 데이터 확인
+python db_test.py
 ```
 
 ## 아키텍처
@@ -117,7 +192,7 @@ python test_simple.py    # 간단한 테스트
 2. **Tree-sitter 파싱**: 지원되는 언어의 경우 Tree-sitter로 AST 생성
 3. **스마트 축소**: `getSmartCollapsedChunks`로 AST 노드별 구조적 청킹
 4. **토큰 검증**: 최대 토큰 수 제한 확인
-5. **벡터 임베딩**: LanceDB에 저장
+5. **벡터 임베딩**: PostgreSQL + pgvector에 저장
 
 ### 지원 언어
 
