@@ -3,6 +3,8 @@ Main entry point for the Python chunking system.
 """
 import asyncio
 import sys
+import argparse
+import hashlib
 from pathlib import Path
 from core.index import PathAndCacheKey, RefreshIndexResults, IndexResultType
 from core.indexing.lance_db_index import LanceDbIndex
@@ -15,10 +17,104 @@ class MockMarkCompleteCallback:
         print(f"Marked {len(items)} items as {result_type.value}")
 
 
+def get_files_from_directory(directory_path: Path) -> list[PathAndCacheKey]:
+    """
+    디렉토리를 순회하여 모든 파일에 대한 PathAndCacheKey 리스트 생성
+    
+    Args:
+        directory_path: 순회할 디렉토리 경로
+        
+    Returns:
+        PathAndCacheKey 객체들의 리스트
+    """
+    # 지원되는 소스 코드 파일 확장자
+    SUPPORTED_EXTENSIONS = {
+        '.py', '.js', '.jsx', '.ts', '.tsx', '.java', '.c', '.cpp', '.cc', '.cxx',
+        '.h', '.hpp', '.cs', '.go', '.rs', '.rb', '.php', '.swift', '.kt', '.kts',
+        '.m', '.mm', '.scala', '.r', '.R', '.lua', '.pl', '.pm', '.sh', '.bash',
+        '.sql', '.html', '.css', '.scss', '.sass', '.less', '.vue', '.dart',
+        '.md', '.txt', '.json', '.yaml', '.yml', '.xml', '.toml', '.ini', '.cfg'
+    }
+    
+    # 제외할 디렉토리 패턴
+    EXCLUDED_DIRS = {
+        '__pycache__', '.git', '.svn', '.hg', 'node_modules', '.venv', 'venv',
+        'env', '.env', 'dist', 'build', 'target', '.idea', '.vscode', '.vs',
+        'bin', 'obj', 'out', '.pytest_cache', '.mypy_cache', '.tox'
+    }
+    
+    # 제외할 파일 패턴
+    EXCLUDED_EXTENSIONS = {
+        '.pyc', '.pyo', '.pyd', '.so', '.dll', '.dylib', '.exe', '.bin',
+        '.class', '.o', '.a', '.lib', '.jar', '.war', '.ear',
+        '.min.js', '.min.css', '.map'
+    }
+    
+    test_files = []
+    
+    if not directory_path.exists():
+        print(f"Error: Directory '{directory_path}' does not exist")
+        return test_files
+    
+    if not directory_path.is_dir():
+        print(f"Error: '{directory_path}' is not a directory")
+        return test_files
+    
+    # 디렉토리 내의 모든 파일 순회 (재귀적으로)
+    for file_path in directory_path.rglob('*'):
+        # 디렉토리는 건너뛰기
+        if not file_path.is_file():
+            continue
+        
+        # 제외할 디렉토리에 포함된 파일은 건너뛰기
+        if any(excluded_dir in file_path.parts for excluded_dir in EXCLUDED_DIRS):
+            continue
+        
+        # 파일 확장자 확인
+        file_extension = file_path.suffix.lower()
+        
+        # 제외할 확장자는 건너뛰기
+        if file_extension in EXCLUDED_EXTENSIONS:
+            continue
+        
+        # 지원되는 확장자만 포함
+        if file_extension in SUPPORTED_EXTENSIONS:
+            # 파일 경로를 기반으로 고유한 cache_key 생성
+            cache_key = hashlib.md5(str(file_path).encode()).hexdigest()
+            
+            test_files.append(
+                PathAndCacheKey(
+                    path=str(file_path),
+                    cache_key=cache_key
+                )
+            )
+    
+    return test_files
+
+
 async def main():
     """Main function demonstrating the chunking system"""
     print("Python Code Chunking System - Real Implementation")
     print("=" * 50)
+    
+    # 커맨드 라인 인자 파싱
+    parser = argparse.ArgumentParser(description='Process code files in a directory for chunking')
+    parser.add_argument(
+        'directory',
+        nargs='?',
+        default='test_files',
+        help='Directory path to process (default: test_files)'
+    )
+    args = parser.parse_args()
+    
+    # 디렉토리 경로 설정
+    if Path(args.directory).is_absolute():
+        target_dir = Path(args.directory)
+    else:
+        target_dir = Path(__file__).parent / args.directory
+    
+    print(f"Target directory: {target_dir}")
+    print()
     
     # Initialize embeddings provider
     embeddings_provider = EmbeddingsProvider(max_embedding_chunk_size=500)
@@ -26,22 +122,17 @@ async def main():
     # Initialize LanceDB index
     index = LanceDbIndex(embeddings_provider)
     
-    # Real test files
-    test_files_dir = Path(__file__).parent / "test_files"
-    test_files = [
-        PathAndCacheKey(
-            path=str(test_files_dir / "Calculator.py"),
-            cache_key="py_calculator_hash"
-        ),
-        PathAndCacheKey(
-            path=str(test_files_dir / "Calculator.js"), 
-            cache_key="js_calculator_hash"
-        ),
-        PathAndCacheKey(
-            path=str(test_files_dir / "Calculator.java"),
-            cache_key="java_calculator_hash"
-        ),
-    ]
+    # 디렉토리에서 파일 목록 가져오기
+    test_files = get_files_from_directory(target_dir)
+    
+    if not test_files:
+        print("No files found to process")
+        return
+    
+    print(f"Found {len(test_files)} files to process:")
+    for file_info in test_files:
+        print(f"  - {file_info.path}")
+    print()
     
     # Create refresh results
     results = RefreshIndexResults(
