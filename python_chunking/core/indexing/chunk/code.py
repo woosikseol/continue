@@ -25,6 +25,36 @@ def first_child(node: Node, grammar_names: list) -> Optional[Node]:
     return None
 
 
+def extract_node_text(node: Node, code: str) -> str:
+    """Extract text content of a node"""
+    return code[node.start_byte:node.end_byte]
+
+
+def get_signature_text(node: Node, code: str) -> str:
+    """
+    Extract the signature of a function/method (everything before the body block).
+    For example: 'async def initialize(self):'
+    
+    Handles multi-line signatures properly.
+    """
+    # 본문 블록을 찾아서 그 이전까지가 시그니처
+    block = first_child(node, ["block", "statement_block"])
+    if block:
+        # 시그니처는 노드 시작부터 블록 시작 직전까지
+        signature_end = block.start_byte
+        signature = code[node.start_byte:signature_end]
+        
+        # ':' 이후의 공백/개행 제거
+        if ':' in signature:
+            colon_idx = signature.rfind(':')
+            signature = signature[:colon_idx + 1]
+        
+        return signature.rstrip()
+    
+    # 블록이 없으면 전체를 반환
+    return extract_node_text(node, code)
+
+
 async def collapse_children(
     node: Node,
     code: str,
@@ -33,54 +63,150 @@ async def collapse_children(
     collapse_block_types: list,
     max_chunk_size: int,
 ) -> str:
-    """Collapse children nodes to fit within chunk size"""
-    code = code[:node.end_byte]
+    """Collapse children nodes to fit within chunk size
+    
+    메서드를 간단한 한 줄 형태로 축소합니다: 'def method(...): ...'
+    깔끔하고 읽기 쉬우며, 모든 메서드를 한눈에 볼 수 있습니다.
+    """
     block = first_child(node, block_types)
-    collapsed_children = []
     
-    if block:
-        children_to_collapse = [
-            child for child in block.children 
-            if child.type in collapse_types
-        ]
+    if not block:
+        return code[node.start_byte:node.end_byte]
+    
+    children_to_collapse = [
+        child for child in block.children 
+        if child.type in collapse_types
+    ]
+    
+    if not children_to_collapse:
+        return code[node.start_byte:node.end_byte]
+    
+    # 클래스/파일의 시작 부분 (첫 메서드 전까지)
+    first_child_start = children_to_collapse[0].start_byte
+    
+    # 메서드 앞의 들여쓰기 포함하여 시작 위치 조정
+    while first_child_start > node.start_byte and code[first_child_start - 1] in ' \t':
+        first_child_start -= 1
+    
+    # 줄 시작으로 이동 (개행 문자 포함)
+    while first_child_start > node.start_byte and code[first_child_start - 1] != '\n':
+        first_child_start -= 1
+    
+    preamble = code[node.start_byte:first_child_start].rstrip()
+    
+    result_lines = [preamble, '']
+    
+    # 각 메서드를 한 줄로 축소
+    processed_methods = set()  # 중복 방지
+    
+    for child in children_to_collapse:
+        # 메서드 앞의 들여쓰기 포함하여 추출
+        # Tree-sitter는 들여쓰기를 포함하지 않으므로, 앞쪽으로 확장
+        child_start = child.start_byte
         
-        for child in reversed(children_to_collapse):
-            grand_child = first_child(child, collapse_block_types)
-            if grand_child:
-                start = grand_child.start_byte
-                end = grand_child.end_byte
-                collapsed_child = (
-                    code[child.start_byte:start] +
-                    collapsed_replacement(grand_child)
-                )
-                code = (
-                    code[:start] +
-                    collapsed_replacement(grand_child) +
-                    code[end:]
-                )
-                collapsed_children.insert(0, collapsed_child)
+        # 1. 먼저 줄 시작으로 이동 (개행 문자 바로 다음)
+        while (child_start > node.start_byte and 
+               child_start > 0 and 
+               child_start - 1 < len(code) and 
+               code[child_start - 1] != '\n'):
+            child_start -= 1
+        
+        # 2. 현재 줄 확인
+        line_end_pos = child_start
+        while (line_end_pos < child.end_byte and 
+               line_end_pos < len(code) and 
+               code[line_end_pos] != '\n'):
+            line_end_pos += 1
+        
+        current_line = code[child_start:line_end_pos].strip()
+        
+        # 3. 현재 줄이 def/async def로 시작하지 않으면 역방향 검색
+        if not (current_line.startswith('def ') or current_line.startswith('async def ')):
+            # 역방향으로 def/async def 찾기
+            search_start = child_start
+            found_def = False
+            
+            # 최대 10줄 역방향 검색
+            for _ in range(10):
+                if search_start <= node.start_byte:
+                    break
+                
+                # 이전 줄로 이동
+                search_start -= 1  # 개행 문자 건너뛰기
+                while (search_start > node.start_byte and 
+                       search_start > 0 and 
+                       search_start - 1 < len(code) and 
+                       code[search_start - 1] != '\n'):
+                    search_start -= 1
+                
+                # 이 줄 확인
+                line_end = search_start
+                while (line_end < child.end_byte and 
+                       line_end < len(code) and 
+                       code[line_end] != '\n'):
+                    line_end += 1
+                
+                line_text = code[search_start:line_end].strip()
+                
+                if line_text.startswith('def ') or line_text.startswith('async def '):
+                    child_start = search_start
+                    found_def = True
+                    break
+            
+            if not found_def:
+                continue
+        
+        # 중복 확인
+        if child_start in processed_methods:
+            continue
+        processed_methods.add(child_start)
+        
+        child_text = code[child_start:child.end_byte]
+        
+        # 메서드 시그니처 추출 (여러 줄일 수 있음)
+        # ':' 위치 찾기
+        colon_idx = child_text.find(':')
+        if colon_idx <= 0:
+            continue
+        
+        # 시그니처 전체 가져오기 (: 이전까지)
+        signature = child_text[:colon_idx]
+        
+        # 들여쓰기 추출 (첫 줄에서)
+        first_line = signature.split('\n')[0]
+        indent = ' ' * (len(first_line) - len(first_line.lstrip()))
+        
+        # 여러 줄 시그니처를 한 줄로 압축
+        signature_parts = []
+        for line in signature.split('\n'):
+            signature_parts.append(line.strip())
+        
+        # 간단한 시그니처 생성
+        full_sig = ' '.join(signature_parts)
+        
+        # 파라미터가 너무 길면 '...'로 축약
+        if len(full_sig) > 60 and '(' in full_sig and ')' in full_sig:
+            method_name_part = full_sig[:full_sig.find('(') + 1]
+            # 파라미터 부분 확인
+            params_end = full_sig.rfind(')')
+            return_part = full_sig[params_end:]
+            
+            # 파라미터 축약
+            collapsed_sig = f"{method_name_part}...{return_part}"
+        else:
+            collapsed_sig = full_sig
+        
+        # 최종 한 줄 메서드
+        result_lines.append(f"{indent}{collapsed_sig}: ...")
     
-    code = code[node.start_byte:]
-    removed_child = False
+    result = '\n'.join(result_lines)
     
-    while (
-        await count_tokens_async(code.strip()) > max_chunk_size and
-        collapsed_children
-    ):
-        removed_child = True
-        # Remove children starting at the end
-        child_code = collapsed_children.pop()
-        index = code.rfind(child_code)
-        if index > 0:
-            code = code[:index] + code[index + len(child_code):]
+    # 토큰 수가 초과하면 뒤에서부터 메서드 제거
+    while await count_tokens_async(result) > max_chunk_size and len(result_lines) > 3:
+        result_lines.pop()  # 마지막 메서드 제거
+        result = '\n'.join(result_lines)
     
-    if removed_child:
-        # Remove extra blank lines
-        lines = code.split("\n")
-        lines = [line for line in lines if line.strip()]
-        code = "\n".join(lines)
-    
-    return code
+    return result
 
 
 async def construct_class_definition_chunk(
@@ -92,7 +218,7 @@ async def construct_class_definition_chunk(
     collapsed_body = await collapse_children(
         node,
         code,
-        ["class_body", "declaration_list"],
+        ["class_body", "declaration_list", "block"],  # Python uses "block"
         ["method_definition", "function_definition", "method_declaration"],
         ["block", "statement_block"],
         max_chunk_size,

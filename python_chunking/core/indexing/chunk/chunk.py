@@ -45,7 +45,7 @@ async def chunk_document_without_id(
             print(f"Code chunker failed, falling back to basic chunker: {e}")
             # Falls back to basic_chunker
     
-    async for chunk in basic_chunker(contents, max_chunk_size):
+    async for chunk in basic_chunker(contents, max_chunk_size, file_uri):
         yield chunk
 
 
@@ -99,12 +99,21 @@ async def chunk_document(
         # 통합 메타데이터 추출
         metadata = None
         if chunk_without_id.node and chunk_without_id.root_node:
+            # code_chunker를 사용한 경우: 완전한 메타데이터 추출
             metadata = extract_metadata_from_node(
                 chunk_without_id.node,
                 content,
                 chunk_without_id.root_node,
                 chunk_without_id.language,
                 chunk_without_id.filepath,
+            )
+        elif chunk_without_id.filepath and index == 0:
+            # basic_chunker를 사용한 경우: 첫 번째 청크만 파일 레벨 메타데이터 생성
+            from core.index import ChunkMetadata
+            import os
+            metadata = ChunkMetadata(
+                symbol_type="file",
+                symbol_name=os.path.basename(chunk_without_id.filepath),
             )
         
         yield Chunk(

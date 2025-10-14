@@ -9,6 +9,7 @@ from core.llm.count_tokens import count_tokens_async
 async def basic_chunker(
     contents: str,
     max_chunk_size: int,
+    filepath: str = "",
 ) -> AsyncGenerator[ChunkWithoutID, None]:
     """Basic chunker for non-code files"""
     if contents.strip() == "":
@@ -34,7 +35,8 @@ async def basic_chunker(
             yield ChunkWithoutID(
                 content=chunk_content,
                 start_line=start_line,
-                end_line=curr_line - 1
+                end_line=curr_line - 1,
+                filepath=filepath,
             )
             chunk_content = ""
             chunk_tokens = 0
@@ -49,5 +51,6 @@ async def basic_chunker(
     yield ChunkWithoutID(
         content=chunk_content,
         start_line=start_line,
-        end_line=curr_line - 1
+        end_line=curr_line - 1,
+        filepath=filepath,
     )

@@ -18,7 +18,8 @@ class ChunkMetadata:
     # 심볼 정보
     symbol_type: Optional[str] = None  # "class", "function", "method", "variable" 등
     symbol_name: Optional[str] = None  # 심볼의 이름
-    
+    symbol_definitions: Dict[str, str] = field(default_factory=dict)  # 정의된 심볼과 위치
+
     # Import/Export 분석
     imports: List[str] = field(default_factory=list)  # ["numpy", "pandas", "Calculator"]
     exports: List[str] = field(default_factory=list)  # ["Calculator", "add", "subtract"]
@@ -26,7 +27,6 @@ class ChunkMetadata:
     # 참조 관계
     references_to: List[str] = field(default_factory=list)  # 이 청크가 참조하는 심볼들
     referenced_by: List[str] = field(default_factory=list)  # 이 청크를 참조하는 위치들
-    symbol_definitions: Dict[str, str] = field(default_factory=dict)  # 정의된 심볼과 위치
     
     # 상속 관계
     extends: Optional[str] = None  # 상속하는 부모 클래스

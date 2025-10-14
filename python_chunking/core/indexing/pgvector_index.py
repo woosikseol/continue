@@ -118,6 +118,11 @@ class PgVectorIndex:
                     # 경로를 상대 경로로 변환
                     relative_path = self._get_relative_path(chunk.filepath)
                     
+                    # 안정적인 UUID 생성: 파일 경로 + 청크 위치 기반
+                    stable_uuid = f"chunk_{relative_path}_{chunk.start_line}_{chunk.end_line}_{chunk.index}"
+                    # 파일 경로의 특수문자를 안전한 문자로 변환
+                    stable_uuid = stable_uuid.replace("/", "_").replace("\\", "_").replace(":", "_")
+                    
                     cur.execute("""
                         INSERT INTO chunks (uuid, path, cachekey, content, start_line, end_line, index, metadata, embedding)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -126,7 +131,7 @@ class PgVectorIndex:
                             metadata = EXCLUDED.metadata,
                             embedding = EXCLUDED.embedding
                     """, (
-                        f"chunk_{chunk.index}_{hash(chunk.content)}",
+                        stable_uuid,
                         relative_path,
                         chunk.digest,
                         chunk.content,
