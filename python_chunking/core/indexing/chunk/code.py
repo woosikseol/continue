@@ -30,29 +30,52 @@ def extract_node_text(node: Node, code: str) -> str:
     return code[node.start_byte:node.end_byte]
 
 
-def get_signature_text(node: Node, code: str) -> str:
+def get_signature_text(node: Node, code: str, remove_colon: bool = False) -> str:
     """
-    Extract the signature of a function/method (everything before the body block).
-    For example: 'async def initialize(self):'
+    Extract the signature of a function/method/class (everything before the body block).
+    For example: 'async def initialize(self, embeddings_provider: Optional[EmbeddingsProvider] = None):'
     
-    Handles multi-line signatures properly.
+    Handles multi-line signatures properly and preserves type hints and indentation.
+    
+    Args:
+        node: Tree-sitter node
+        code: Source code string
+        remove_colon: If True, removes the final ':' from the signature (for class methods)
     """
     # 본문 블록을 찾아서 그 이전까지가 시그니처
-    block = first_child(node, ["block", "statement_block"])
+    block = first_child(node, ["block", "statement_block", "class_body"])
     if block:
-        # 시그니처는 노드 시작부터 블록 시작 직전까지
+        # 실제 줄 시작 위치 찾기 (들여쓰기 포함)
+        line_start = code.rfind('\n', 0, node.start_byte) + 1
         signature_end = block.start_byte
-        signature = code[node.start_byte:signature_end]
+        signature = code[line_start:signature_end]
         
-        # ':' 이후의 공백/개행 제거
-        if ':' in signature:
+        # ':' 이후의 공백/개행 제거하되, type hint는 유지
+        if remove_colon and ':' in signature:
             colon_idx = signature.rfind(':')
-            signature = signature[:colon_idx + 1]
+            signature = signature[:colon_idx]
         
-        return signature.rstrip()
+        # 들여쓰기 보존하면서 여러 줄 시그니처 정리
+        lines = signature.split('\n')
+        if len(lines) == 1:
+            # 한 줄인 경우 그대로 반환
+            return signature
+        else:
+            # 여러 줄인 경우: 첫 줄의 들여쓰기 보존 + 나머지는 공백으로 연결
+            first_line = lines[0]
+            
+            # 나머지 줄들을 공백으로 연결하되 들여쓰기 제거
+            other_lines = [line.strip() for line in lines[1:] if line.strip()]
+            if other_lines:
+                return first_line + ' ' + ' '.join(other_lines)
+            else:
+                return first_line
+        
+        return signature
     
-    # 블록이 없으면 전체를 반환
-    return extract_node_text(node, code)
+    # 블록이 없으면 전체를 반환 (들여쓰기 포함)
+    line_start = code.rfind('\n', 0, node.start_byte) + 1
+    return code[line_start:node.end_byte]
 
 
 async def collapse_children(
@@ -163,41 +186,21 @@ async def collapse_children(
         
         child_text = code[child_start:child.end_byte]
         
-        # 메서드 시그니처 추출 (여러 줄일 수 있음)
-        # ':' 위치 찾기
-        colon_idx = child_text.find(':')
-        if colon_idx <= 0:
-            continue
-        
-        # 시그니처 전체 가져오기 (: 이전까지)
-        signature = child_text[:colon_idx]
+        # 메서드 시그니처 추출 (type hint와 파라미터 포함, 들여쓰기 보존, 콜론 보존)
+        signature = get_signature_text(child, code, remove_colon=False)
         
         # 들여쓰기 추출 (첫 줄에서)
-        first_line = signature.split('\n')[0]
+        first_line = signature.split('\n')[0] if '\n' in signature else signature
         indent = ' ' * (len(first_line) - len(first_line.lstrip()))
         
-        # 여러 줄 시그니처를 한 줄로 압축
-        signature_parts = []
-        for line in signature.split('\n'):
-            signature_parts.append(line.strip())
+        # 시그니처에서 들여쓰기 제거 (들여쓰기는 별도로 관리)
+        clean_signature = signature.strip()
         
-        # 간단한 시그니처 생성
-        full_sig = ' '.join(signature_parts)
+        # 함수 시그니처는 완전히 보존 (본문만 collapse)
+        collapsed_sig = clean_signature
         
-        # 파라미터가 너무 길면 '...'로 축약
-        if len(full_sig) > 60 and '(' in full_sig and ')' in full_sig:
-            method_name_part = full_sig[:full_sig.find('(') + 1]
-            # 파라미터 부분 확인
-            params_end = full_sig.rfind(')')
-            return_part = full_sig[params_end:]
-            
-            # 파라미터 축약
-            collapsed_sig = f"{method_name_part}...{return_part}"
-        else:
-            collapsed_sig = full_sig
-        
-        # 최종 한 줄 메서드
-        result_lines.append(f"{indent}{collapsed_sig}: ...")
+        # 최종 한 줄 메서드 (들여쓰기 + 시그니처 + ...)
+        result_lines.append(f"{indent}{collapsed_sig} ...")
     
     result = '\n'.join(result_lines)
     
@@ -249,16 +252,84 @@ async def construct_root_definition_chunk(
     max_chunk_size: int,
 ) -> str:
     """Construct chunk for root node (module/source_file)"""
-    # 루트 노드는 최상위 정의들만 포함하는 축소 청크 생성
-    collapsed_body = await collapse_children(
-        node,
-        code,
-        ["module", "source_file", "program"],  # 루트 컨테이너
-        ["class_definition", "function_definition", "class_declaration", "function_declaration"],  # 축소할 항목
-        ["class_body", "block", "statement_block", "declaration_list"],  # 블록 타입
-        max_chunk_size,
-    )
-    return collapsed_body
+    # 루트 노드의 직접 자식들 중에서 클래스와 함수만 추출
+    top_level_definitions = []
+    
+    for child in node.children:
+        if child.type in ["class_definition", "function_definition", "class_declaration", "function_declaration"]:
+            # 각 정의를 한 줄로 축소 (type hint와 파라미터 유지)
+            if child.type in ["class_definition", "class_declaration"]:
+                # 클래스: 'class ClassName(BaseClass): ...'
+                signature = get_signature_text(child, code, remove_colon=False)
+                
+                # 클래스의 생성자(__init__) 시그니처도 포함
+                init_method = None
+                # 먼저 직접 자식에서 찾기
+                for method in child.children:
+                    if method.type == "function_definition":
+                        method_text = code[method.start_byte:method.end_byte]
+                        if "def __init__" in method_text:
+                            init_method = method
+                            break
+                
+                # 직접 자식에서 못 찾으면 block 노드 안에서 찾기
+                if not init_method:
+                    for block in child.children:
+                        if block.type == "block":
+                            for method in block.children:
+                                if method.type == "function_definition":
+                                    method_text = code[method.start_byte:method.end_byte]
+                                    if "def __init__" in method_text:
+                                        init_method = method
+                                        break
+                            break
+                
+                if init_method:
+                    init_signature = get_signature_text(init_method, code, remove_colon=False)
+                    # 들여쓰기 제거하고 한 줄로 만들기
+                    init_signature = ' '.join(init_signature.split())
+                    top_level_definitions.append(f"{signature}")
+                    top_level_definitions.append(f"    {init_signature} ...")
+                else:
+                    top_level_definitions.append(f"{signature} ...")
+            else:
+                # 함수: 'def function_name(param1: Type, param2: Type = default) -> ReturnType: ...'
+                signature = get_signature_text(child, code, remove_colon=False)
+                top_level_definitions.append(f"{signature} ...")
+    
+    if not top_level_definitions:
+        # 정의가 없으면 파일의 첫 부분만 반환
+        lines = code.split('\n')
+        return '\n'.join(lines[:10]) + '\n...' if len(lines) > 10 else code
+    
+    # 파일 헤더 (import 문 등) + 축소된 정의들
+    result_lines = []
+    
+    # 파일 시작부터 첫 번째 정의까지 (import 문 등)
+    if top_level_definitions:
+        first_def_start = min(child.start_byte for child in node.children 
+                            if child.type in ["class_definition", "function_definition", "class_declaration", "function_declaration"])
+        header = code[node.start_byte:first_def_start].strip()
+        if header:
+            result_lines.append(header)
+            result_lines.append('')
+    
+    # 축소된 정의들 추가
+    result_lines.extend(top_level_definitions)
+    
+    result = '\n'.join(result_lines)
+    
+    # 크기가 여전히 크면 더 축소
+    if len(result) > max_chunk_size:
+        # import 문만 남기고 나머지는 축소
+        lines = result.split('\n')
+        import_lines = [line for line in lines if line.strip().startswith(('import ', 'from '))]
+        if import_lines:
+            result = '\n'.join(import_lines) + '\n\n# ... (other definitions)'
+        else:
+            result = result[:max_chunk_size-10] + '\n...'
+    
+    return result
 
 
 # Node constructors for different node types

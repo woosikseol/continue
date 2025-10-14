@@ -11,7 +11,7 @@ def main():
     parser.add_argument(
         '--force', '-f',
         action='store_true',
-        help='확인 없이 바로 삭제 (주의: 모든 데이터가 삭제됩니다!)'
+        help='--force 옵션을 표시 (실제로는 항상 바로 삭제됩니다)'
     )
     parser.add_argument(
         '--drop-table',
@@ -50,44 +50,31 @@ def main():
                 print("삭제할 데이터가 없습니다.")
                 return
             
-            # 삭제 확인
-            should_delete = False
-            
+            # 바로 삭제 실행
             if args.force:
-                should_delete = True
-                print("⚠️  --force 옵션이 지정되어 확인 없이 삭제합니다.")
+                print("⚠️  --force 옵션이 지정되어 삭제합니다.")
             else:
-                # 사용자에게 확인 요청
                 if args.drop_table:
-                    print(f"\n⚠️  경고: 테이블 '{TABLE_NAME}'과 모든 데이터({current_count}개)를 삭제하려고 합니다.")
+                    print(f"⚠️  테이블 '{TABLE_NAME}'과 모든 데이터({current_count}개)를 삭제합니다.")
                 else:
-                    print(f"\n⚠️  경고: {current_count}개의 데이터를 삭제하려고 합니다.")
-                
-                try:
-                    response = input("정말로 삭제하시겠습니까? (yes/no): ")
-                    should_delete = response.lower() in ['yes', 'y']
-                except (EOFError, KeyboardInterrupt):
-                    print("\n❌ 삭제가 취소되었습니다.")
-                    return
+                    print(f"⚠️  {current_count}개의 데이터를 삭제합니다.")
             
-            if should_delete:
-                if args.drop_table:
-                    # 테이블 자체를 삭제
-                    cur.execute(f"DROP TABLE IF EXISTS {TABLE_NAME} CASCADE")
-                    conn.commit()
-                    print(f"✅ 테이블 '{TABLE_NAME}'이 완전히 삭제되었습니다.")
-                else:
-                    # 데이터만 삭제 (테이블 구조는 유지)
-                    cur.execute(f"DELETE FROM {TABLE_NAME}")
-                    conn.commit()
-                    print(f"✅ 테이블 '{TABLE_NAME}'의 모든 데이터가 삭제되었습니다.")
-                    
-                    # 삭제 후 확인
-                    cur.execute(f"SELECT COUNT(*) as count FROM {TABLE_NAME}")
-                    remaining_count = cur.fetchone()['count']
-                    print(f"남은 데이터 개수: {remaining_count}개")
+            # 삭제 실행
+            if args.drop_table:
+                # 테이블 자체를 삭제
+                cur.execute(f"DROP TABLE IF EXISTS {TABLE_NAME} CASCADE")
+                conn.commit()
+                print(f"✅ 테이블 '{TABLE_NAME}'이 완전히 삭제되었습니다.")
             else:
-                print("❌ 삭제가 취소되었습니다.")
+                # 데이터만 삭제 (테이블 구조는 유지)
+                cur.execute(f"DELETE FROM {TABLE_NAME}")
+                conn.commit()
+                print(f"✅ 테이블 '{TABLE_NAME}'의 모든 데이터가 삭제되었습니다.")
+                
+                # 삭제 후 확인
+                cur.execute(f"SELECT COUNT(*) as count FROM {TABLE_NAME}")
+                remaining_count = cur.fetchone()['count']
+                print(f"남은 데이터 개수: {remaining_count}개")
         
         conn.close()
         print("✅ 데이터베이스 연결이 종료되었습니다.")
